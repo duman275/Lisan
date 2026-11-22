@@ -3,7 +3,7 @@
 // İki sağlayıcı: Claude (API anahtarı ile) veya Ollama (bilgisayarında yerel çalışan, tamamen ücretsiz model).
 import type Anthropic from "@anthropic-ai/sdk";
 import { FALLBACK_BETA, getClient, MODEL, aiAvailable } from "./ai.ts";
-import { checkOllama, OLLAMA_MODEL, OLLAMA_URL, type OllamaMessage } from "./ollama.ts";
+import { checkOllama, ollamaHeaders, OLLAMA_MODEL, OLLAMA_URL, thinkParam, type OllamaMessage } from "./ollama.ts";
 
 export const AGENT_MODEL = process.env.AGENT_MODEL || MODEL;
 
@@ -269,12 +269,12 @@ async function ollamaTurn(history: AgentMsg[], state: string): Promise<AgentTurn
 
   const r = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: ollamaHeaders(),
     body: JSON.stringify({
       model: OLLAMA_MODEL,
       messages,
       stream: false,
-      think: false,
+      ...thinkParam(),
       tools: TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } })),
     }),
     signal: AbortSignal.timeout(120_000),

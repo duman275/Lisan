@@ -2,15 +2,32 @@
 import type { z } from "zod";
 import { toJSONSchema } from "zod";
 
-export const OLLAMA_URL = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/$/, "");
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen3:8b";
+// Ollama Cloud: OLLAMA_API_KEY verilirse varsayılan adres ollama.com olur (bilgisayara kurulum gerekmez).
+export const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "";
+export const OLLAMA_CLOUD = Boolean(OLLAMA_API_KEY) && !process.env.OLLAMA_URL;
+export const OLLAMA_URL = (process.env.OLLAMA_URL || (OLLAMA_API_KEY ? "https://ollama.com" : "http://localhost:11434")).replace(/\/$/, "");
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || (OLLAMA_CLOUD ? "gpt-oss:120b" : "qwen3:8b");
+
+/** İstek başlıkları (bulut için anahtar) */
+export function ollamaHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json", ...(OLLAMA_API_KEY ? { Authorization: `Bearer ${OLLAMA_API_KEY}` } : {}) };
+}
+
+/** Yerel modellerde düşünmeyi kapat (hız); bulut modellerinde (gpt-oss) alan gönderilmez. */
+export function thinkParam(): Record<string, unknown> {
+  return OLLAMA_CLOUD ? {} : { think: false };
+}
 
 let state = { available: false, checkedAt: 0, models: [] as string[] };
+// Bulut hesabında kredi yoksa bir süre Ollama'yı atla (otomatik modda ücretsiz motora düşülür)
+let blockedUntil = 0;
+export let ollamaBlockReason = "";
 
 export async function checkOllama(): Promise<typeof state> {
+  if (Date.now() < blockedUntil) return { ...state, available: false };
   if (Date.now() - state.checkedAt < 30_000) return state;
   try {
-    const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    const r = await fetch(`${OLLAMA_URL}/api/tags`, { headers: ollamaHeaders(), signal: AbortSignal.timeout(OLLAMA_CLOUD ? 8000 : 1500) });
     const data = (await r.json()) as { models?: { name: string }[] };
     state = { available: r.ok, checkedAt: Date.now(), models: (data.models || []).map((m) => m.name) };
   } catch {
@@ -29,13 +46,22 @@ export interface OllamaMessage {
 async function post(body: Record<string, unknown>, signal?: AbortSignal) {
   const r = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: OLLAMA_MODEL, think: false, ...body }),
+    headers: ollamaHeaders(),
+    body: JSON.stringify({ model: OLLAMA_MODEL, ...thinkParam(), ...body }),
     signal: signal ?? AbortSignal.timeout(300_000),
   });
   if (!r.ok) {
     const t = (await r.text()).slice(0, 200);
-    throw new Error(`Ollama hatası (${r.status}): ${t}. Modeli indirdiniz mi? → ollama pull ${OLLAMA_MODEL}`);
+    if (/usage credits|subscribe/i.test(t)) {
+      blockedUntil = Date.now() + 10 * 60_000;
+      ollamaBlockReason = "Ollama Cloud hesabında kredi/abonelik yok";
+      throw new Error("Ollama Cloud bu model için kredi ya da abonelik istiyor (ollama.com/plans). Ücretsiz seçenek: Ollama'yı bilgisayarına kurup yerel model kullanmak.");
+    }
+    throw new Error(
+      r.status === 401 || r.status === 403
+        ? "Ollama Cloud anahtarı geçersiz (OLLAMA_API_KEY)."
+        : `Ollama hatası (${r.status}): ${t}. ${OLLAMA_CLOUD ? `Model adı doğru mu? (OLLAMA_MODEL=${OLLAMA_MODEL})` : `Modeli indirdiniz mi? → ollama pull ${OLLAMA_MODEL}`}`,
+    );
   }
   return r;
 }

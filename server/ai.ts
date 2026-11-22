@@ -407,7 +407,19 @@ export async function jsonTask(req: JsonRequest): Promise<unknown> {
       break;
   }
 
-  if (engine === "ollama") return ollamaJson(system, content, schema);
+  if (engine === "ollama") {
+    try {
+      return await ollamaJson(system, content, schema);
+    } catch (err) {
+      // Otomatik modda Ollama başarısız olursa (ör. bulut kredisi yok) ücretsiz motoru dene
+      if (req.provider === "ollama") throw err;
+      try {
+        return freeJson(req);
+      } catch {
+        throw err;
+      }
+    }
+  }
   const format = betaZodOutputFormat(schema);
   const msg = await getClient().beta.messages.parse({
     model: MODEL,
