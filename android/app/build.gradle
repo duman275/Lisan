@@ -1,0 +1,23 @@
+// Lisan Android uygulaması: siteyi (https://duman275.github.io/Lisan/) Chrome tabanlı tam ekran pencerede açar (Trusted Web Activity).
+// Böylece konuşma tanıma, sesli okuma ve çevrimdışı çalışma telefondaki Chrome'la aynı şekilde çalışır.
+plugins { id "com.android.application" }
+
+android {
+    namespace "io.github.duman275.lisan"
+    compileSdk 34
+    defaultConfig {
+        applicationId "io.github.duman275.lisan"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+}

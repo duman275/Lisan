@@ -34,6 +34,21 @@ export function SettingsView() {
         <h3>📲 Uygulamayı telefona yükle</h3>
         <p className="muted small">Lisan'ı ana ekranına uygulama olarak ekle: tam ekran açılır, çevrimdışı da çalışır (dersler, kartlar, indirilen kitaplar).</p>
         <InstallButton />
+        {STATIC && (
+          <div className="apk">
+            <p className="small">
+              <b>Yükle düğmesi çalışmıyorsa (Android):</b> uygulama dosyasını indirip doğrudan kur.
+            </p>
+            <a className="btn primary" href={`${import.meta.env.BASE_URL}Lisan.apk`} download>
+              ⬇ Android uygulamasını indir (APK)
+            </a>
+            <ol className="small muted">
+              <li>İndirme bitince bildirimden ya da “Dosyalarım → İndirilenler”den <b>Lisan.apk</b>'ya dokun.</li>
+              <li>“Bilinmeyen uygulamalar” uyarısı çıkarsa <b>Ayarlar → Bu kaynağa izin ver</b>'i aç, geri dön.</li>
+              <li><b>Yükle</b>'ye bas. Play Protect “tanınmayan uygulama” derse “Yine de yükle”yi seç (uygulama Play Store'da olmadığı için).</li>
+            </ol>
+          </div>
+        )}
       </div>
       {STATIC && <PhoneAI />}
       <div className="card">

@@ -45,6 +45,19 @@ jobs:
           VITE_STATIC: "1"
           VITE_BASE: /Lisan/
       # Pages'in bir kez açılması gerekir: Settings → Pages → Source: GitHub Actions
+      # Android uygulaması (APK): siteyle birlikte indirilebilir → /Lisan/Lisan.apk
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - name: Android APK derle
+        continue-on-error: true
+        timeout-minutes: 12
+        working-directory: android
+        run: gradle assembleDebug --no-daemon && cp app/build/outputs/apk/debug/app-debug.apk ../dist/Lisan.apk && ls -la ../dist/Lisan.apk
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

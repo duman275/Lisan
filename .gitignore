@@ -3,3 +3,6 @@ dist
 .env
 public/books
 public/data
+android/.gradle
+android/build
+android/app/build
