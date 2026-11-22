@@ -57,7 +57,12 @@ jobs:
         continue-on-error: true
         timeout-minutes: 12
         working-directory: android
-        run: gradle assembleDebug --no-daemon && cp app/build/outputs/apk/debug/app-debug.apk ../dist/Lisan.apk && ls -la ../dist/Lisan.apk
+        run: |
+          for i in 1 2 3; do
+            if gradle assembleDebug --no-daemon; then break; fi
+            echo "Deneme $i başarısız, 30 sn sonra tekrar"; sleep 30
+          done
+          cp app/build/outputs/apk/debug/app-debug.apk ../dist/Lisan.apk && ls -la ../dist/Lisan.apk
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
