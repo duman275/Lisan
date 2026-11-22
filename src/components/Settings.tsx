@@ -48,6 +48,13 @@ export function SettingsView() {
             </select>
           </label>
           <label>
+            Görünüm
+            <select value={settings.theme || "westeros"} onChange={(e) => setSettings((s) => ({ ...s, theme: e.target.value as "westeros" | "classic" }))}>
+              <option value="westeros">🐺🐉 Buz ve Ateş (koyu, altın)</option>
+              <option value="classic">Klasik (açık)</option>
+            </select>
+          </label>
+          <label>
             Günlük hedef (dakika)
             <input type="number" min={10} max={240} value={settings.dailyGoal} onChange={(e) => setSettings((s) => ({ ...s, dailyGoal: Number(e.target.value) || 45 }))} />
           </label>

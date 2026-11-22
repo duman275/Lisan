@@ -3,6 +3,7 @@ import { getJSON } from "./lib/api";
 import { HealthContext, NavContext, NO_HEALTH, type Health, type Route, type Tab } from "./components/common";
 import { Assistant } from "./components/Assistant";
 import { registerNav } from "./lib/actions";
+import { useSettings } from "./lib/store";
 import { Learn } from "./components/Learn";
 import { Library } from "./components/Library";
 import { Analysis, Catalog, Summary } from "./components/Books";
@@ -56,6 +57,11 @@ export default function App() {
   };
 
   registerNav(go, () => routeRef.current);
+  const [settings] = useSettings();
+  useEffect(() => {
+    if (settings.theme === "classic") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = "westeros";
+  }, [settings.theme]);
 
   return (
     <HealthContext.Provider value={health}>

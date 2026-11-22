@@ -7,6 +7,8 @@ import { narrator, nativeCode, useNarrator } from "../lib/tts";
 
 // ---------- Gezinme ----------
 
+const STATIC_BUILD = import.meta.env.VITE_STATIC === "1";
+
 export type Tab = "learn" | "library" | "catalog" | "summary" | "analysis" | "settings";
 export interface Route {
   tab: Tab;
@@ -47,7 +49,15 @@ export function AiNotice() {
   return (
     <div className="notice">
       <b>Ücretsiz mod.</b> İngilizce dersler, kelime kartları ve seviye testi Tatoeba'nın gerçek cümleleriyle; özet ve analizler Wikipedia'dan, API'siz hazırlanır.
-      Öğretmenle sohbet, hikâye yazma, podcast ve diğer diller için bilgisayarına <b>ücretsiz Ollama</b> kurabilirsin (Ayarlar → Yapay zekâ kaynağı).
+      {STATIC_BUILD ? (
+        <>
+          Öğretmen, podcast, hikâye ve asistan için <b>Ayarlar → Telefonda yapay zekâ</b> bölümüne ücretsiz Gemini anahtarını yapıştır.
+        </>
+      ) : (
+        <>
+          Öğretmenle sohbet, hikâye yazma, podcast ve diğer diller için bilgisayarına <b>ücretsiz Ollama</b> kurabilirsin (Ayarlar → Yapay zekâ kaynağı).
+        </>
+      )}
     </div>
   );
 }

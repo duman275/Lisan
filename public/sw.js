@@ -1,6 +1,6 @@
 // Lisan service worker: uygulamayı yüklenebilir yapar ve çevrimdışı çalıştırır.
 // Uygulama dosyaları, ücretsiz ders verisi ve açılan kitaplar önbelleğe alınır.
-const CACHE = "lisan-v2";
+const CACHE = "lisan-v3";
 const SCOPE = self.registration.scope;
 const CORE = ["", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png"].map((p) => SCOPE + p);
 

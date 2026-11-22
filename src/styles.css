@@ -326,3 +326,49 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .links > summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); }
 .links .chips { margin-top: 8px; }
 a.chip { text-decoration: none; color: inherit; }
+
+/* ---------- Buz ve Ateş teması (varsayılan) ---------- */
+:root[data-theme="westeros"] {
+  --bg: #0b0f16;
+  --surface: #131922;
+  --surface-2: #1b232f;
+  --text: #ece6d8;
+  --muted: #9ca3ae;
+  --border: #2a3441;
+  --accent: #d4a73a;
+  --accent-ink: #0b0f16;
+  --accent-soft: #2b2416;
+  --warn: #e07a3a;
+  --ok: #5fb37a;
+  --bad: #e5534b;
+  --hl: #4b3b13;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 22px rgb(0 0 0 / 0.25);
+  --display: "Cinzel", "Trajan Pro", Georgia, serif;
+  color-scheme: dark;
+}
+:root[data-theme="westeros"] body {
+  background:
+    radial-gradient(1200px 700px at -10% -10%, rgb(74 163 216 / 0.16), transparent 60%),
+    radial-gradient(1100px 700px at 110% 110%, rgb(217 72 15 / 0.16), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+:root[data-theme="westeros"] h1,
+:root[data-theme="westeros"] h2,
+:root[data-theme="westeros"] h3,
+:root[data-theme="westeros"] .brand {
+  font-family: var(--display);
+  letter-spacing: 0.02em;
+}
+:root[data-theme="westeros"] h2 { color: #f1dca0; }
+:root[data-theme="westeros"] .card { background: linear-gradient(180deg, rgb(255 255 255 / 0.02), transparent), var(--surface); }
+:root[data-theme="westeros"] .top { background: color-mix(in srgb, var(--bg) 80%, transparent); border-bottom-color: #3a2f18; }
+:root[data-theme="westeros"] .btn.primary,
+:root[data-theme="westeros"] .icon.big,
+:root[data-theme="westeros"] .fab:not(.mic) { background: linear-gradient(180deg, #f0cf72, #b8862a); border-color: #8a6420; color: #1a1205; }
+:root[data-theme="westeros"] .hero .level { color: #f1dca0; }
+:root[data-theme="westeros"] .msg.user,
+:root[data-theme="westeros"] .ab.me { background: linear-gradient(180deg, #c99a33, #9c7220); color: #1a1205; }
+:root[data-theme="westeros"] .bubble.right { background: #1d2a36; }
+:root[data-theme="westeros"] .notice { background: #241a10; border-color: #4a3418; }
+:root[data-theme="westeros"] .flash-word { color: #f1dca0; }

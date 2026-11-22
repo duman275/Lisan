@@ -65,6 +65,7 @@ export interface Settings {
   agentProvider: "auto" | "claude" | "ollama" | "free"; // tüm yapay zekâ özellikleri için kaynak
   agentSpeak: boolean; // asistan yanıtlarını sesli oku
   // Telefonda (sunucusuz sürüm) doğrudan bağlanılan yapay zekâ servisi
+  theme: "westeros" | "classic";
   llmProvider: string;
   llmBaseUrl: string;
   llmModel: string;
@@ -84,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   wakeWord: false,
   agentProvider: "auto",
   agentSpeak: true,
+  theme: "westeros",
   llmProvider: "gemini",
   llmBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
   llmModel: "gemini-3.5-flash",
