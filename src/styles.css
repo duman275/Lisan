@@ -390,3 +390,4 @@ a.chip { text-decoration: none; color: inherit; }
 .video-wrap.yt .subs-overlay { bottom: 56px; z-index: 2; }
 h3.mt { margin-top: 16px; }
 .dub-status { color: var(--accent); }
+.sticky-status { position: sticky; top: 64px; z-index: 15; box-shadow: 0 6px 20px rgb(0 0 0 / 0.35); }

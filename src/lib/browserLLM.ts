@@ -68,10 +68,12 @@ type ChatMessage =
 // Gemini'de model kapatılırsa ya da yoğunsa sırayla denenecek modeller
 const GEMINI_FALLBACKS = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"];
 
-async function post(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
+async function post(path: string, body: Record<string, unknown>, signal?: AbortSignal, preferModel?: string): Promise<Response> {
   const cfg = llmConfig();
   if (!cfg) throw new Error("Yapay zekâ anahtarı girilmemiş (Ayarlar → Telefonda yapay zekâ).");
-  const models = cfg.baseUrl.includes("generativelanguage.googleapis.com") ? [cfg.model, ...GEMINI_FALLBACKS.filter((m) => m !== cfg.model)] : [cfg.model];
+  const isGemini = cfg.baseUrl.includes("generativelanguage.googleapis.com");
+  const first = isGemini && preferModel ? preferModel : cfg.model;
+  const models = isGemini ? [...new Set([first, cfg.model, ...GEMINI_FALLBACKS])] : [cfg.model];
   let r!: Response;
   for (let k = 0; k < models.length; k++) {
     try {
@@ -155,7 +157,7 @@ function extractJson(text: string): unknown {
 }
 
 /** Şemaya uygun JSON üretir; geçersizse bir kez düzeltmesini ister. */
-export async function llmJson<T>(system: string, content: string, schema: z.ZodType<T>): Promise<T> {
+export async function llmJson<T>(system: string, content: string, schema: z.ZodType<T>, preferModel?: string): Promise<T> {
   const jsonSchema = JSON.stringify(toJSONSchema(schema));
   const messages: ChatMessage[] = [
     { role: "system", content: `${system}\n\nRespond with ONLY a JSON object (no markdown) that matches this JSON Schema:\n${jsonSchema}` },
@@ -164,10 +166,10 @@ export async function llmJson<T>(system: string, content: string, schema: z.ZodT
   for (let attempt = 0; attempt < 2; attempt++) {
     let r: Response;
     try {
-      r = await post("/chat/completions", { messages, response_format: { type: "json_object" } });
+      r = await post("/chat/completions", { messages, response_format: { type: "json_object" } }, undefined, preferModel);
     } catch (e) {
       // Bazı servisler response_format desteklemez: onsuz dene
-      if (/\(400\)/.test((e as Error).message)) r = await post("/chat/completions", { messages });
+      if (/\(400\)/.test((e as Error).message)) r = await post("/chat/completions", { messages }, undefined, preferModel);
       else throw e;
     }
     const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };

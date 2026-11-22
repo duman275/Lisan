@@ -472,6 +472,7 @@ export async function translateCues(cues: Cue[], targetLang: string, onProgress:
       "You are a professional subtitle translator. Translate each subtitle line naturally and concisely (subtitles must stay short and readable), keeping the same number of lines in the same order. Keep names. Use context from neighbouring lines.",
       `Translate these ${part.length} subtitle lines into ${targetLang}. Return {"lines": [...]} with exactly ${part.length} items.\n\n${part.map((c, k) => `${k + 1}. ${c.t}`).join("\n")}`,
       schema,
+      "gemini-flash-lite-latest", // hızlı model: çeviri için yeterli, ana modelin günlük kotasını korur
     );
     part.forEach((c, k) => out.push({ ...c, t: (r.lines[k] || c.t).replace(/^\d+\.\s*/, "") }));
     onProgress(Math.min(cues.length, i + N));

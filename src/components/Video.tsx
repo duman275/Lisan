@@ -544,17 +544,18 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
     }
   }
 
-  async function runTranslate() {
+  async function runTranslate(code = target) {
     setErr("");
     const base = meta.subs.orig || meta.subs[sub1];
     if (!base?.length) return setErr("Önce altyazı çıkar ya da yükle.");
     try {
       setBusy(`Çevriliyor… 0/${base.length}`);
-      const out = await translateCues(base, langByCode(target).name, (d) => setBusy(`Çevriliyor… ${d}/${base.length}`));
-      await saveSubs(target, out);
-      setSub1(target);
-      if (meta.subs.orig) setSub2("orig");
-      setDubLang(target);
+      setBusy(`${langByCode(code).label} diline çevriliyor… (yaklaşık ${Math.max(10, Math.round(base.length / 3))} sn)`);
+      const out = await translateCues(base, langByCode(code).name, (d) => setBusy(`${langByCode(code).label} diline çevriliyor… ${d}/${base.length}`));
+      await saveSubs(code, out);
+      setSub1(code);
+      if (meta.subs.orig && code !== "orig") setSub2("orig");
+      setDubLang(code);
       setBusy("");
     } catch (e) {
       setBusy("");
@@ -598,13 +599,32 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
         <div className="toolbar">
           <label className="small">
             Altyazı
-            <select value={sub1} onChange={(e) => setSub1(e.target.value)}>
+            <select
+              value={sub1}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v.startsWith("tr:")) {
+                  const code = v.slice(3);
+                  setTarget(code);
+                  void runTranslate(code);
+                } else setSub1(v);
+              }}
+            >
               <option value="">Kapalı</option>
               {tracks.map((k) => (
                 <option key={k} value={k}>
                   {label(k, meta)}
                 </option>
               ))}
+              {tracks.length > 0 && llmReady && (
+                <optgroup label="🌐 Başka dile çevir">
+                  {LANGUAGES.filter((l) => !tracks.includes(l.code)).map((l) => (
+                    <option key={l.code} value={`tr:${l.code}`}>
+                      🌐 {l.flag} {l.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <label className="small">
@@ -622,14 +642,21 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       </div>
 
       {busy && (
-        <div className="card status">
+        <div className="card status sticky-status">
           <span className="spinner" /> {busy}
           <button className="btn ghost small" onClick={() => abort.current?.abort()}>
             Durdur
           </button>
         </div>
       )}
-      {err && <div className="error">{err}</div>}
+      {err && (
+        <div className="error sticky-status card">
+          {err}{" "}
+          <button className="btn ghost small" onClick={() => setErr("")}>
+            Kapat
+          </button>
+        </div>
+      )}
 
       <div className="card">
         <h3>1 · Altyazı</h3>
@@ -674,7 +701,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
               </option>
             ))}
           </select>
-          <button className="btn primary" disabled={Boolean(busy) || !llmReady || !tracks.length} onClick={runTranslate}>
+          <button className="btn primary" disabled={Boolean(busy) || !llmReady || !tracks.length} onClick={() => runTranslate()}>
             🌐 Altyazıyı çevir
           </button>
         </div>
