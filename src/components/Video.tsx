@@ -1,7 +1,7 @@
 import { del, get, set } from "idb-keyval";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useSettings, uid } from "../lib/store";
-import { narrator, findVoice, synthNeural, toBcp47 } from "../lib/tts";
+import { narrator, findVoice, synthNeural, cancelNeuralBefore, toBcp47 } from "../lib/tts";
 import { NEURAL_PREFIX } from "../lib/voices";
 import {
   cueAt,
@@ -16,6 +16,8 @@ import {
   toVtt,
   transcribe,
   transcribeCompat,
+  transcribeAudio,
+  type Progress,
   fileToDataUrl,
   INLINE_MAX,
   translateCues,
@@ -47,8 +49,10 @@ function useVideos(): [VideoMeta[], (fn: (v: VideoMeta[]) => VideoMeta[]) => Pro
   return [list, update];
 }
 
-const label = (key: string, meta?: VideoMeta) =>
-  key === "orig" ? `Orijinal${meta?.spokenLang ? ` (${langByCode(toBcp47(meta.spokenLang)).label})` : ""}` : `${langByCode(key).flag} ${langByCode(key).label}`;
+const label = (key: string, meta?: VideoMeta): string =>
+  meta?.partial?.[key] !== undefined
+    ? `${label(key)} (yarım${key === "orig" ? "" : " — devam etmek için seç"})`
+    : key === "orig" ? `Orijinal${meta?.spokenLang ? ` (${langByCode(toBcp47(meta.spokenLang)).label})` : ""}` : `${langByCode(key).flag} ${langByCode(key).label}`;
 
 // ---------- Oynatıcı soyutlaması: telefondaki video ya da YouTube ----------
 
@@ -203,8 +207,11 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
 
   async function addLink() {
     setErr("");
-    const url = link.trim();
+    // Paylaşım metninin içindeki bağlantıyı al (“Şuna bak https://x.com/…” gibi)
+    const url = (/https?:\/\/\S+/i.exec(link.trim())?.[0] || link.trim()).replace(/[)\]}>.,;]+$/, "");
     if (!/^https?:\/\//i.test(url)) return setErr("Geçerli bir bağlantı yapıştır (https://…).");
+    if (/^https?:\/\/t\.co\//i.test(url))
+      return setErr("Bu kısaltılmış bir t.co bağlantısı. X'te gönderiyi aç → Paylaş → “Bağlantıyı kopyala” ile x.com/…/status/… bağlantısını yapıştır.");
     const id = uid();
     const yt = youtubeId(url);
     if (yt) {
@@ -242,8 +249,12 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
         } catch (e) {
           if ((e as Error).name === "AbortError") throw e;
           // İndirmeye izin verilmezse uzaktan oynat
+          setStatus("Video telefondan oynatılacak şekilde ekleniyor…");
           const duration = await probeDuration(fileUrl);
-          await update((l) => [{ id, name: title, size: 0, type: "video/mp4", duration, added: Date.now(), subs: {}, source: { kind: "remote", url: fileUrl, page: url } }, ...l]);
+          await update((l) => [
+            { id, name: title, size: 0, type: "video/mp4", duration, added: Date.now(), subs: {}, source: { kind: "remote", url: fileUrl, page: url, alts: xv.alts } },
+            ...l,
+          ]);
         }
         setStatus("");
         setLink("");
@@ -395,8 +406,22 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
   const isYT = meta.source?.kind === "youtube";
   const [src, setSrc] = useState("");
   const [missing, setMissing] = useState(false);
+  const altIdx = useRef(0);
+  /** Uzak video açılamazsa sıradaki adresi dene */
+  const onVideoError = () => {
+    if (meta.source?.kind !== "remote") return;
+    const alts = meta.source.alts || [];
+    if (altIdx.current < alts.length) {
+      setSrc(alts[altIdx.current++]);
+      return;
+    }
+    setErr(
+      "Bu X videosu oynatılamadı (X videoya erişimi engellemiş ya da gönderi kaldırılmış olabilir). Videoyu X'ten telefona indirip “Video seç” ile ekleyebilirsin.",
+    );
+  };
   const [media, setMedia] = useState<MediaLike | null>(null);
   const [time, setTime] = useState(0);
+  const subsRef = useRef<{ a?: Cue[]; b?: Cue[] }>({});
   const tracks = Object.keys(meta.subs);
   const [sub1, setSub1] = useState<string>(tracks.find((k) => k !== "orig") || tracks[0] || "");
   const [sub2, setSub2] = useState<string>("");
@@ -445,6 +470,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
         .catch((e) => setErr((e as Error).message));
     } else if (meta.source?.kind === "remote") {
       setSrc(meta.source.url);
+      altIdx.current = 0;
     } else {
       void loadVideoFile(meta.id).then((f) => {
         if (!f) return setMissing(true);
@@ -469,8 +495,20 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
   // Zamanı takip et (altyazı için)
   useEffect(() => {
     if (!media) return;
-    return media.on("time", () => setTime(media.currentTime));
-  }, [media]);
+    // Yalnızca görünen altyazı satırı değişince yeniden çiz (uzun videolarda donmayı önler)
+    let key = "";
+    const f = () => {
+      const t = media.currentTime;
+      const { a, b } = subsRef.current;
+      const k = `${cueAt(a, t)}|${cueAt(b, t)}`;
+      if (k !== key) {
+        key = k;
+        setTime(t);
+      }
+    };
+    f();
+    return media.on("time", f);
+  }, [media, sub1, sub2, meta.subs]);
 
   // Kaldığı yeri hatırla
   useEffect(() => {
@@ -487,6 +525,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
 
   const c1 = meta.subs[sub1];
   const c2 = meta.subs[sub2];
+  subsRef.current = { a: c1, b: c2 };
   const i1 = cueAt(c1, time);
   const i2 = cueAt(c2, time);
 
@@ -494,14 +533,41 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
     await update((l) => l.map((x) => (x.id === meta.id ? { ...x, ...extra, subs: { ...x.subs, [key]: cues } } : x)));
   }
 
+  /** Yarım kalan işin ilerlemesini kaydeder (undefined → tamamlandı). */
+  async function savePartial(key: string, cues: Cue[], upTo: number | undefined, extra: Partial<VideoMeta> = {}) {
+    await update((l) =>
+      l.map((x) => {
+        if (x.id !== meta.id) return x;
+        const partial = { ...(x.partial || {}) };
+        if (upTo === undefined) delete partial[key];
+        else partial[key] = upTo;
+        return { ...x, ...extra, partial, subs: { ...x.subs, [key]: cues } };
+      }),
+    );
+  }
+
   async function runTranscribe() {
     setErr("");
     const ctrl = new AbortController();
     abort.current = ctrl;
     const duration = meta.duration || media?.duration || 0;
+    const resume = meta.partial?.orig;
+    let shown = false;
+    const pr: Progress = {
+      startAt: resume,
+      prev: resume ? meta.subs.orig : [],
+      lang: meta.spokenLang,
+      onPartial: async (cues, upTo, lang) => {
+        await savePartial("orig", cues, upTo, { spokenLang: lang || undefined });
+        if (!shown && cues.length) {
+          shown = true;
+          setSub1("orig");
+        }
+      },
+    };
     const done = async (r: { lang: string; cues: Cue[] }) => {
       if (!r.cues.length) throw new Error("Videoda konuşma bulunamadı.");
-      await saveSubs("orig", r.cues, { spokenLang: r.lang });
+      await savePartial("orig", r.cues, undefined, { spokenLang: r.lang });
       setSub1("orig");
       setDubLang((d) => d || "orig");
       setBusy("");
@@ -510,17 +576,23 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       // 1) YouTube ve uzak videolar: bağlantı doğrudan Gemini'ye verilir
       if (meta.source?.kind === "youtube" || meta.source?.kind === "remote") {
         setBusy("Gemini videoyu izliyor…");
-        return await done(await transcribeCompat(meta.source.url, duration, setBusy, ctrl.signal));
+        return await done(await transcribeCompat(meta.source.url, duration, setBusy, ctrl.signal, pr));
       }
       const f = await loadVideoFile(meta.id);
       if (!f) throw new Error("Video dosyası bulunamadı.");
-      // 2) Küçük dosyalar: dosyanın kendisi gönderilir (her anahtar türüyle çalışır)
-      if (f.size <= INLINE_MAX) {
+      // 2) Küçük ve kısa dosyalar: dosyanın kendisi gönderilir
+      if (f.size <= INLINE_MAX && duration && duration <= 20 * 60) {
         setBusy("Video hazırlanıyor…");
         const dataUrl = await fileToDataUrl(new Blob([f], { type: f.type || "video/mp4" }));
-        return await done(await transcribeCompat(dataUrl, duration, setBusy, ctrl.signal));
+        return await done(await transcribeCompat(dataUrl, duration, setBusy, ctrl.signal, pr));
       }
-      // 3) Büyük dosyalar: Gemini dosya servisi (2 GB'a kadar)
+      // 3) Büyük/uzun dosyalar (2 GB, saatlerce): ses telefonda 10 dakikalık parçalara ayrılır
+      try {
+        return await done(await transcribeAudio(f, duration, setBusy, ctrl.signal, pr));
+      } catch (e) {
+        // Ses aracı açılamazsa (eski tarayıcı) ve anahtar destekliyorsa Gemini dosya servisi
+        if (!/Ses aracı|sesi okunamadı|WORKERFS|wasm|Worker/i.test((e as Error).message) || !settings.llmKey.startsWith("AIza")) throw e;
+      }
       let g = meta.gemini && meta.gemini.expires > Date.now() ? meta.gemini : undefined;
       if (!g) {
         setBusy("Gemini'ye yükleniyor… %0");
@@ -535,11 +607,9 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       if ((e as Error).name === "AbortError") return;
       const m = (e as Error).message;
       setErr(
-        /anahtarı reddedildi|OAuth|401/.test(m)
-          ? `${m} — Anahtar türün büyük dosya yüklemeyi desteklemiyor. Çözüm: videoyu YouTube'a “liste dışı” olarak yükleyip bağlantısını ekle (2 GB ve uzun videolar sorunsuz çalışır) ya da 14 MB'tan küçük bir parça kullan.`
-          : /quota|kullanım sınırı|429/i.test(m)
-            ? `${m} — Gemini'nin ücretsiz günlük sınırı doldu; yarın tekrar dene ya da Ayarlar'dan başka bir model seç.`
-            : m,
+        /quota|kullanım sınırı|429/i.test(m)
+          ? `${m} — Gemini'nin ücretsiz günlük sınırı doldu. Yapılan kısım kaydedildi; yarın “Kaldığı yerden devam et”e bas.`
+          : `${m} — Yapılan kısım kaydedildi; tekrar basınca kaldığı yerden devam eder.`,
       );
     }
   }
@@ -548,18 +618,38 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
     setErr("");
     const base = meta.subs.orig || meta.subs[sub1];
     if (!base?.length) return setErr("Önce altyazı çıkar ya da yükle.");
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    const prev = meta.partial?.[code] && code !== "orig" ? meta.subs[code] || [] : [];
+    const name = langByCode(code).label;
     try {
-      setBusy(`Çevriliyor… 0/${base.length}`);
-      setBusy(`${langByCode(code).label} diline çevriliyor… (yaklaşık ${Math.max(10, Math.round(base.length / 3))} sn)`);
-      const out = await translateCues(base, langByCode(code).name, (d) => setBusy(`${langByCode(code).label} diline çevriliyor… ${d}/${base.length}`));
-      await saveSubs(code, out);
+      setBusy(`${name} diline çevriliyor… ${prev.length}/${base.length}`);
+      let shown = false;
+      const out = await translateCues(
+        base,
+        langByCode(code).name,
+        (d) => setBusy(`${name} diline çevriliyor… ${d}/${base.length}`),
+        prev,
+        async (part) => {
+          await savePartial(code, part, part.length);
+          if (!shown) {
+            shown = true;
+            setSub1(code);
+            if (meta.subs.orig && code !== "orig") setSub2("orig");
+          }
+        },
+        ctrl.signal,
+      );
+      await savePartial(code, out, undefined);
       setSub1(code);
       if (meta.subs.orig && code !== "orig") setSub2("orig");
       setDubLang(code);
       setBusy("");
     } catch (e) {
       setBusy("");
-      setErr((e as Error).message);
+      if ((e as Error).name === "AbortError") return;
+      const m = (e as Error).message;
+      setErr(/quota|sınır|429/i.test(m) ? `${m} — Çevrilen kısım kaydedildi; sonra aynı dili seçince kaldığı yerden devam eder.` : m);
     }
   }
 
@@ -589,7 +679,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
           <p className="error">Video dosyası bu cihazda bulunamadı (tarayıcı verileri silinmiş olabilir). Altyazılar duruyor; videoyu yeniden yükleyebilirsin.</p>
         ) : (
           <div className="video-wrap">
-            <video ref={videoRef} src={src} controls playsInline />
+            <video ref={videoRef} src={src || undefined} controls playsInline onError={onVideoError} />
             <div className="subs-overlay" aria-live="polite">
               {i2 >= 0 && <div className="sub sub2">{c2![i2].t}</div>}
               {i1 >= 0 && <div className="sub">{c1![i1].t}</div>}
@@ -607,7 +697,10 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
                   const code = v.slice(3);
                   setTarget(code);
                   void runTranslate(code);
-                } else setSub1(v);
+                } else {
+                  setSub1(v);
+                  if (v && v !== "orig" && meta.partial?.[v] !== undefined && !busy) void runTranslate(v);
+                }
               }}
             >
               <option value="">Kapalı</option>
@@ -662,7 +755,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
         <h3>1 · Altyazı</h3>
         <div className="row wrap">
           <button className="btn primary" disabled={Boolean(busy) || !geminiReady} onClick={runTranscribe}>
-            🎙 Konuşmalardan altyazı çıkar (Gemini)
+            {meta.partial?.orig ? `▶ Kaldığı yerden devam et (${fmtTime(meta.partial.orig)})` : "🎙 Konuşmalardan altyazı çıkar (Gemini)"}
           </button>
           <button className="btn" onClick={() => subFile.current?.click()}>
             📄 .srt / .vtt yükle
@@ -685,8 +778,8 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
         </div>
         {!geminiReady && (
           <p className="muted small">
-            Altyazı çıkarmak için <b>Ayarlar → Telefonda yapay zekâ</b>'ya Google Gemini anahtarını ekle (ücretsiz). Video Gemini'ye yüklenir ve 48 saat sonra oradan
-            silinir. Uzun videolar 15 dakikalık bölümlerle işlenir.
+            Altyazı çıkarmak için <b>Ayarlar → Telefonda yapay zekâ</b>'ya Google Gemini anahtarını ekle (ücretsiz). Uzun videolarda ses telefonda 10 dakikalık
+            parçalara ayrılır; her parça kaydedilir, yarıda kalırsa kaldığı yerden devam edilir.
           </p>
         )}
       </div>
@@ -758,25 +851,49 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       {c1 && c1.length > 0 && (
         <div className="card">
           <h3>Metin ({label(sub1, meta)})</h3>
-          <div className="transcript">
-            {c1.map((c, k) => (
-              <button
-                key={k}
-                className={`tline ${k === i1 ? "now" : ""}`}
-                onClick={() => {
-                  if (media) media.currentTime = c.s + 0.01;
-                }}
-              >
-                <span className="muted small">{fmtTime(c.s)}</span> {c.t}
-                {c2 && cueAt(c2, c.s + 0.05) >= 0 && <span className="muted small"> — {c2[cueAt(c2, c.s + 0.05)].t}</span>}
-              </button>
-            ))}
-          </div>
+          <Transcript c1={c1} c2={c2} now={i1} media={media} />
         </div>
       )}
     </div>
   );
 }
+
+/** Uzun videolarda binlerce satır: satırlar bir kez hesaplanır, yalnızca etkin satır değişir. */
+const Transcript = memo(function Transcript({ c1, c2, now, media }: { c1: Cue[]; c2?: Cue[]; now: number; media: MediaLike | null }) {
+  const pairs = useMemo(() => c1.map((c) => (c2 ? c2[cueAt(c2, c.s + 0.05)]?.t : undefined)), [c1, c2]);
+  const [all, setAll] = useState(false);
+  const LIMIT = 300;
+  // Çok uzun metinde etkin satırın çevresi gösterilir
+  const from = all || c1.length <= LIMIT ? 0 : Math.max(0, Math.min(c1.length - LIMIT, Math.floor(Math.max(0, now) / 100) * 100 - 50));
+  const to = all ? c1.length : Math.min(c1.length, from + LIMIT);
+  const rows = [];
+  for (let k = from; k < to; k++)
+    rows.push(<TLine key={k} k={k} c={c1[k]} tr={pairs[k]} on={k === now} media={media} />);
+  return (
+    <div className="transcript">
+      {from > 0 && <p className="muted small">… {from} satır önce</p>}
+      {rows}
+      {to < c1.length && !all && (
+        <button className="btn ghost small" onClick={() => setAll(true)}>
+          Tümünü göster ({c1.length} satır)
+        </button>
+      )}
+    </div>
+  );
+});
+const TLine = memo(function TLine({ c, tr, on, media }: { k: number; c: Cue; tr?: string; on: boolean; media: MediaLike | null }) {
+  return (
+    <button
+      className={`tline ${on ? "now" : ""}`}
+      onClick={() => {
+        if (media) media.currentTime = c.s + 0.01;
+      }}
+    >
+      <span className="muted small">{fmtTime(c.s)}</span> {c.t}
+      {tr && <span className="muted small"> — {tr}</span>}
+    </button>
+  );
+});
 
 /** Telefon tarayıcıları kullanıcı dokunmadan ses çalmayı engelleyebilir: dokunma anında sesi “açar”. */
 const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
@@ -813,19 +930,29 @@ function useDubber(media: MediaLike | null, cues: Cue[] | undefined, lang: strin
       setInfo("");
       return;
     }
-    let raf = 0;
+    let timer = 0;
     let alive = true;
-    let storedVoices: string[] = [];
+    let ready = new Set<string>();
     let neuralBroken = false;
-    void narrator.storedVoices().then((x) => (storedVoices = x));
     const voiceOf = (text: string) => narrator.voiceFor({ text, lang });
     const neuralId = (text: string) => {
       const vid = voiceOf(text);
       return vid?.startsWith(NEURAL_PREFIX) && !neuralBroken ? vid.slice(NEURAL_PREFIX.length) : null;
     };
+    // Ses modeli yalnızca bir kez indirilir (her satırda yeniden değil)
+    const prepare = (id: string) => {
+      if (ready.has(id)) return true;
+      narrator
+        .ensureVoice(id, (pct) => alive && setInfo(`⬇ Nöral ses indiriliyor %${pct} — bu sırada telefonun sesi kullanılıyor`))
+        .then(() => {
+          ready = new Set(ready).add(id);
+        })
+        .catch(() => (neuralBroken = true));
+      return false;
+    };
     const neuralClip = (k: number) => {
       const id = neuralId(cues[k].t);
-      if (!id) return null;
+      if (!id || !ready.has(id)) return null;
       let c = clips.current.get(k);
       if (!c) {
         c = synthNeural(cues[k].t, id);
@@ -833,6 +960,14 @@ function useDubber(media: MediaLike | null, cues: Cue[] | undefined, lang: strin
         clips.current.set(k, c);
       }
       return c;
+    };
+    // Uzun videolarda bellek dolmasın: geride kalan sesleri bırak
+    const prune = (k: number) => {
+      for (const [j, c] of clips.current)
+        if (j < k - 1 || j > k + 4) {
+          clips.current.delete(j);
+          c.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+        }
     };
     const speakDevice = (k: number) => {
       const c = cues[k];
@@ -854,21 +989,22 @@ function useDubber(media: MediaLike | null, cues: Cue[] | undefined, lang: strin
       const c = cues[k];
       const dur = Math.max(0.6, c.e - c.s);
       const id = neuralId(c.t);
-      // Nöral ses henüz indirilmediyse indirilirken telefonun sesi kullanılır
-      if (id && !storedVoices.includes(id)) {
-        void narrator
-          .downloadVoice(id, (pct) => alive && setInfo(`⬇ Nöral ses indiriliyor %${pct} — bu sırada telefonun sesi kullanılıyor`))
-          .then(() => void narrator.storedVoices().then((x) => (storedVoices = x)))
-          .catch(() => (neuralBroken = true));
-        speakDevice(k);
-        return;
-      }
-      for (let j = k + 1; j <= Math.min(k + 3, cues.length - 1); j++) neuralClip(j);
+      if (id && !prepare(id)) return speakDevice(k);
+      prune(k);
       const clip = neuralClip(k);
+      // Sonraki iki satırı önceden hazırla (sırayla, arka planda)
+      for (let j = k + 1; j <= Math.min(k + 2, cues.length - 1); j++) neuralClip(j);
       if (!clip) return speakDevice(k);
+      let late = false;
+      const lateTimer = setTimeout(() => {
+        // Sentez gecikirse satırı kaçırmamak için telefonun sesi
+        late = true;
+        if (alive && last.current === k && !v.paused) speakDevice(k);
+      }, 1500);
       clip
         .then((url) => {
-          if (!alive || last.current !== k || v.paused) return;
+          clearTimeout(lateTimer);
+          if (late || !alive || last.current !== k || v.paused) return;
           audio.src = url;
           audio.onloadedmetadata = () => {
             audio.playbackRate = Math.min(1.7, Math.max(1, audio.duration / dur));
@@ -878,35 +1014,43 @@ function useDubber(media: MediaLike | null, cues: Cue[] | undefined, lang: strin
             (e) => setInfo(`⚠️ Ses çalınamadı (${(e as Error).name}). “Dublajı aç” kutusunu kapatıp yeniden aç.`),
           );
         })
-        .catch(() => {
+        .catch((e: Error) => {
+          clearTimeout(lateTimer);
+          if (e.message === "canceled") return;
           neuralBroken = true;
           setInfo("Nöral ses yüklenemedi; telefonun sesi kullanılıyor.");
-          speakDevice(k);
+          if (!late) speakDevice(k);
         });
     };
     const tick = () => {
+      if (v.paused) return;
       const k = cueAt(cues, v.currentTime);
       if (k !== last.current) {
         last.current = k;
-        if (k >= 0 && !v.paused) speak(k);
+        if (k >= 0) speak(k);
       }
-      raf = requestAnimationFrame(tick);
     };
     const stop = () => {
       audio.pause();
       speechSynthesis.cancel();
       last.current = -1;
     };
+    const seek = () => {
+      stop();
+      cancelNeuralBefore();
+      for (const c of clips.current.values()) c.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+      clips.current.clear();
+    };
     const off1 = v.on("pause", stop);
-    const off2 = v.on("seeking", stop);
-    raf = requestAnimationFrame(tick);
+    const off2 = v.on("seeking", seek);
+    timer = window.setInterval(tick, 200);
     setInfo("Dublaj açık: videoyu oynat.");
     return () => {
       alive = false;
-      cancelAnimationFrame(raf);
+      clearInterval(timer);
       off1();
       off2();
-      stop();
+      seek();
     };
   }, [cues, lang, audio, media]);
 

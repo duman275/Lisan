@@ -115,12 +115,8 @@ class Narrator {
     let c = this.clips.get(key);
     if (!c) {
       const text = this.segs[i].text;
-      c = loadVits()
-        .then((t) =>
-          t.predict({ text, voiceId: voiceId as Parameters<Vits["predict"]>[0]["voiceId"] }, (p) => {
-            if (p.total) this.emit({ loading: `Ses modeli indiriliyor… %${Math.round((p.loaded / p.total) * 100)} (bir kez)` });
-          }),
-        )
+      c = this.ensureVoice(voiceId)
+        .then(() => neuralBlob(text, voiceId))
         .then((blob) => URL.createObjectURL(blob));
       c.catch(() => this.clips.delete(key));
       this.clips.set(key, c);
@@ -255,8 +251,7 @@ class Narrator {
     if (vid?.startsWith(NEURAL_PREFIX)) {
       this.token++;
       synth?.cancel();
-      loadVits()
-        .then((t) => t.predict({ text, voiceId: vid.slice(NEURAL_PREFIX.length) as Parameters<Vits["predict"]>[0]["voiceId"] }))
+      neuralBlob(text, vid.slice(NEURAL_PREFIX.length))
         .then((blob) => {
           const a = (this.audio ??= new Audio());
           a.onended = null;
@@ -285,6 +280,24 @@ class Narrator {
     this.neuralFailed = false;
     const t = await loadVits();
     await t.download(id as Parameters<Vits["download"]>[0], (p) => p.total && onProgress(Math.round((p.loaded / p.total) * 100)));
+  }
+  private voiceDl = new Map<string, Promise<void>>();
+  /** Ses modelini (gerekirse) bir kez indirir; ilerlemeyi gösterir. */
+  ensureVoice(id: string, onProgress?: (pct: number) => void): Promise<void> {
+    let p = this.voiceDl.get(id);
+    if (!p) {
+      p = this.storedVoices().then((st) =>
+        st.includes(id)
+          ? undefined
+          : this.downloadVoice(id, (pct) => {
+              onProgress?.(pct);
+              this.emit({ loading: `Ses modeli indiriliyor… %${pct} (bir kez)` });
+            }),
+      );
+      p.catch(() => this.voiceDl.delete(id));
+      this.voiceDl.set(id, p);
+    }
+    return p;
   }
   async storedVoices(): Promise<string[]> {
     try {
@@ -372,7 +385,63 @@ export function pickVoiceByGender(lang: string, g: "f" | "m"): string | undefine
 
 /** Nöral sesle tek bir metni ses dosyasına çevirir (dublaj için). */
 export async function synthNeural(text: string, voiceId: string): Promise<string> {
+  return URL.createObjectURL(await neuralBlob(text, voiceId));
+}
+
+// Sentez ayrı iş parçacığında yapılır; model bir kez yüklenir (arayüz donmaz)
+let worker: Worker | null = null;
+let workerBroken = false;
+let nextId = 1;
+const pending = new Map<number, { ok: (b: Blob) => void; fail: (e: Error) => void }>();
+function getWorker(): Worker | null {
+  if (workerBroken || typeof Worker === "undefined") return null;
+  if (!worker) {
+    try {
+      worker = new Worker(new URL("./ttsWorker.ts", import.meta.url), { type: "module" });
+      worker.onmessage = (ev: MessageEvent<{ id: number; wav?: ArrayBuffer; error?: string }>) => {
+        const p = pending.get(ev.data.id);
+        if (!p) return;
+        pending.delete(ev.data.id);
+        if (ev.data.wav) p.ok(new Blob([ev.data.wav], { type: "audio/wav" }));
+        else p.fail(new Error(ev.data.error || "sentez hatası"));
+      };
+      worker.onerror = () => {
+        workerBroken = true;
+        worker = null;
+        for (const p of pending.values()) p.fail(new Error("worker"));
+        pending.clear();
+      };
+    } catch {
+      workerBroken = true;
+      return null;
+    }
+  }
+  return worker;
+}
+/** Bu numaradan önceki bekleyen sentez isteklerini iptal eder (sarma/atlama sonrası). */
+export function cancelNeuralBefore(): void {
+  worker?.postMessage({ cancelBelow: nextId });
+}
+export async function neuralBlob(text: string, voiceId: string): Promise<Blob> {
+  const w = getWorker();
+  if (w) {
+    try {
+      return await new Promise<Blob>((ok, fail) => {
+        const id = nextId++;
+        pending.set(id, { ok, fail });
+        w.postMessage({ id, text, voiceId });
+      });
+    } catch (e) {
+      const m = (e as Error).message;
+      if (m === "canceled") throw e;
+      // İşçi bu cihazda çalışmadıysa eski yönteme geç (bir daha işçiyi deneme)
+      if (m !== "worker" && /Unknown|bilinmeyen|wasm|import|module|Tensor|session|onnx/i.test(m)) {
+        workerBroken = true;
+        worker?.terminate();
+        worker = null;
+      } else if (m !== "worker") throw e;
+    }
+  }
   const t = await loadVits();
-  const blob = await t.predict({ text, voiceId: voiceId as Parameters<Vits["predict"]>[0]["voiceId"] });
-  return URL.createObjectURL(blob);
+  return t.predict({ text, voiceId: voiceId as Parameters<Vits["predict"]>[0]["voiceId"] });
 }

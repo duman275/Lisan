@@ -5,6 +5,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   base: process.env.VITE_BASE || "/",
   plugins: [react()],
+  // Ses işçileri (nöral ses, ffmpeg) modül olarak derlenir: içlerinde dinamik import var
+  worker: { format: "es" },
+  optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"] },
   server: {
     port: 5173,
     proxy: { "/api": "http://localhost:8787" },

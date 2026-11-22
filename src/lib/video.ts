@@ -22,12 +22,14 @@ export interface VideoMeta {
   spokenLang?: string; // videoda konuşulan dil (ISO)
   subs: Record<string, Cue[]>; // dil adı → altyazılar ("Orijinal", "Türkçe", "English"…)
   gemini?: { name: string; uri: string; mime: string; expires: number };
+  /** Yarım kalan işler: altyazı için işlenen saniye, çeviri için çevrilen satır sayısı (dil kodu → değer) */
+  partial?: Record<string, number>;
   /** Bağlantıdan eklenen video: YouTube (gömülü oynatılır) ya da doğrudan dosya bağlantısı */
   source?:
     | { kind: "youtube"; url: string; videoId: string }
     | { kind: "url"; url: string }
     /** İndirilemeyen ama oynatılabilen uzak video (ör. X/Twitter videosu) */
-    | { kind: "remote"; url: string; page?: string };
+    | { kind: "remote"; url: string; page?: string; alts?: string[] };
 }
 
 /** YouTube bağlantısından video kimliğini çıkarır (watch, youtu.be, shorts, embed, live). */
@@ -63,42 +65,56 @@ export interface XVideo {
   url: string;
   text: string;
   author: string;
+  /** Oynatma başarısız olursa denenecek diğer adresler */
+  alts: string[];
+}
+
+type FxMedia = { videos?: { url: string; width?: number; height?: number; variants?: { url: string; bitrate?: number; content_type?: string }[] }[] };
+type FxTweet = { text?: string; author?: { screen_name?: string }; media?: FxMedia; quote?: { media?: FxMedia } };
+
+async function getJson<T>(url: string): Promise<{ ok: boolean; status: number; data?: T }> {
+  const r = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+  return { ok: r.ok, status: r.status, data: r.ok ? ((await r.json()) as T) : undefined };
 }
 
 /** X gönderisindeki videonun .mp4 adresini bulur (açık FixTweet / vxTwitter servisleri üzerinden). */
 export async function resolveXVideo(id: string): Promise<XVideo> {
   const errs: string[] = [];
-  // 1) FixTweet
-  try {
-    const r = await fetch(`https://api.fxtwitter.com/status/${id}`);
-    if (r.ok) {
-      const d = (await r.json()) as {
-        tweet?: { text?: string; author?: { screen_name?: string }; media?: { videos?: { url: string; width?: number }[] } };
-      };
-      const vids = d.tweet?.media?.videos || [];
-      if (vids.length) return { url: vids[0].url, text: d.tweet?.text || "", author: d.tweet?.author?.screen_name || "" };
-      errs.push("gönderide video yok");
-    } else errs.push(`FixTweet ${r.status}`);
-  } catch {
-    errs.push("FixTweet erişilemedi");
+  // Her durumda denenebilecek doğrudan oynatma adresleri (servis videoya yönlendirir)
+  const direct = [`https://d.fxtwitter.com/i/status/${id}`, `https://d.vxtwitter.com/i/status/${id}`];
+  let noVideo = false;
+  const [fx, vx] = await Promise.allSettled([
+    getJson<{ tweet?: FxTweet }>(`https://api.fxtwitter.com/status/${id}`),
+    getJson<{ text?: string; user_screen_name?: string; media_extended?: { type: string; url: string }[]; mediaURLs?: string[] }>(
+      `https://api.vxtwitter.com/Twitter/status/${id}`,
+    ),
+  ]);
+  const found: { url: string; text: string; author: string }[] = [];
+  if (fx.status === "fulfilled" && fx.value.data?.tweet) {
+    const t = fx.value.data.tweet;
+    const vids = [...(t.media?.videos || []), ...(t.quote?.media?.videos || [])];
+    if (vids.length) {
+      const v = vids[0];
+      // En yüksek kaliteli mp4 türevi
+      const best = (v.variants || []).filter((x) => /mp4/.test(x.content_type || x.url)).sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0]?.url;
+      found.push({ url: best || v.url, text: t.text || "", author: t.author?.screen_name || "" });
+      if (best && best !== v.url) found.push({ url: v.url, text: "", author: "" });
+    } else noVideo = true;
+  } else errs.push(fx.status === "fulfilled" ? `FixTweet ${fx.value.status}` : "FixTweet erişilemedi");
+  if (vx.status === "fulfilled" && vx.value.data) {
+    const d = vx.value.data;
+    const v = (d.media_extended || []).find((m) => m.type === "video" || m.type === "gif") || (d.mediaURLs || []).map((u) => ({ url: u })).find((m) => /\.mp4/.test(m.url));
+    if (v) found.push({ url: v.url, text: d.text || "", author: d.user_screen_name || "" });
+    else noVideo = true;
+  } else errs.push(vx.status === "fulfilled" ? `vxTwitter ${vx.value.status}` : "vxTwitter erişilemedi");
+  if (found.length) {
+    const urls = [...new Set([...found.map((f) => f.url), ...direct])];
+    const meta = found.find((f) => f.text || f.author) || found[0];
+    return { url: urls[0], text: meta.text, author: meta.author, alts: urls.slice(1) };
   }
-  // 2) vxTwitter
-  try {
-    const r = await fetch(`https://api.vxtwitter.com/Twitter/status/${id}`);
-    if (r.ok) {
-      const d = (await r.json()) as { text?: string; user_screen_name?: string; media_extended?: { type: string; url: string }[]; mediaURLs?: string[] };
-      const v = (d.media_extended || []).find((m) => m.type === "video" || m.type === "gif") || (d.mediaURLs || []).map((u) => ({ url: u })).find((m) => /\.mp4/.test(m.url));
-      if (v) return { url: v.url, text: d.text || "", author: d.user_screen_name || "" };
-      errs.push("gönderide video yok");
-    } else errs.push(`vxTwitter ${r.status}`);
-  } catch {
-    errs.push("vxTwitter erişilemedi");
-  }
-  throw new Error(
-    errs.includes("gönderide video yok")
-      ? "Bu X gönderisinde video bulunamadı (yalnızca fotoğraf ya da metin olabilir)."
-      : `X videosunun adresi alınamadı (${errs.join(", ")}). Gönderi gizli/korumalı ya da silinmiş olabilir.`,
-  );
+  if (noVideo) throw new Error("Bu X gönderisinde video bulunamadı (yalnızca fotoğraf ya da metin olabilir; alıntılanan gönderideki video da denendi).");
+  // Servislerin bilgi uçlarına ulaşılamadıysa doğrudan oynatma adresleri denenir
+  return { url: direct[0], text: "", author: "", alts: direct.slice(1) };
 }
 
 /** Paylaşım bağlantılarını doğrudan indirilebilir biçime çevirir (Dropbox, Google Drive). */
@@ -404,78 +420,207 @@ export async function fileToDataUrl(file: Blob): Promise<string> {
   });
 }
 
-export async function transcribeCompat(
-  videoUrl: string,
-  duration: number,
-  onProgress: (msg: string) => void,
-  signal?: AbortSignal,
-): Promise<{ lang: string; cues: Cue[] }> {
-  const STEP = 300;
-  const all: Cue[] = [];
-  let lang = "";
-  let total = duration;
-  for (let a = 0, k = 0; k < 60; a += STEP, k++) {
-    if (total && a >= total) break;
-    const b = a + STEP;
-    onProgress(`Altyazı çıkarılıyor: ${fmtTime(a)}–${fmtTime(total ? Math.min(b, total) : b)}${total ? ` (${k + 1}/${Math.ceil(total / STEP)})` : ""}`);
-    const text = await llmComplete(
-      [
-        {
-          role: "system",
-          content:
-            'You are a precise subtitle transcriber. Respond ONLY with JSON: {"lang": ISO 639-1 code of the main spoken language, "duration": total video length in seconds, "cues": [{"s": start seconds, "e": end seconds, "t": text}]}',
-        },
-        {
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: videoUrl } },
-            {
-              type: "text",
-              text: `Transcribe ALL speech (and sung lyrics) verbatim in the original spoken language, do not translate. Only the part between ${a} and ${b} seconds of the video. "s"/"e" are seconds from the START of the video. Max ~84 characters per cue; split longer sentences. If there is no speech in this part, return an empty cues array.`,
-            },
-          ],
-        },
-      ],
-      { response_format: { type: "json_object" } },
-      signal,
-    );
-    let data: { lang?: string; duration?: number; cues?: Cue[] };
+export interface Progress {
+  /** Her parçadan sonra o ana kadarki altyazılar (kaydedilir; yarıda kalırsa kaldığı yerden devam edilir) */
+  onPartial?: (cues: Cue[], upTo: number, lang: string) => void | Promise<void>;
+  startAt?: number;
+  prev?: Cue[];
+  lang?: string;
+}
+
+type Part = { type: "image_url"; image_url: { url: string } } | { type: "input_audio"; input_audio: { data: string; format: "mp3" } };
+
+async function retry<T>(fn: () => Promise<T>, signal?: AbortSignal, tries = 3): Promise<T> {
+  for (let i = 0; ; i++) {
     try {
-      const body = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-      data = JSON.parse(body);
-    } catch {
-      throw new Error("Gemini geçerli altyazı üretmedi, tekrar dene.");
+      return await fn();
+    } catch (e) {
+      if (signal?.aborted || (e as Error).name === "AbortError" || i >= tries - 1) throw e;
+      if (/401|403|anahtar/i.test((e as Error).message)) throw e;
+      await new Promise((r) => setTimeout(r, 4000 * (i + 1)));
     }
-    if (!total && data.duration && data.duration > 0) total = data.duration;
+  }
+}
+
+/** "1:02", "01:02.5", "1:00:02" ya da 62 → saniye */
+function toSec(v: unknown): number {
+  if (typeof v === "number") return v;
+  const str = String(v ?? "").trim();
+  if (/^\d+(\.\d+)?$/.test(str)) return Number(str);
+  const m = /^(?:(\d+):)?(\d{1,2}):(\d{1,2}(?:[.,]\d+)?)$/.exec(str);
+  return m ? Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3].replace(",", ".")) : NaN;
+}
+
+/** Model yanıtındaki JSON'u hoşgörülü okur (kod bloğu, dizi, yarım kalmış yanıt). */
+function parseCueJson(text: string): { lang?: string; duration?: number; cues?: Cue[] } | null {
+  const t = text.replace(/```(?:json)?/g, "").trim();
+  const tryParse = (x: string) => {
+    try {
+      return JSON.parse(x) as unknown;
+    } catch {
+      return undefined;
+    }
+  };
+  const o = t.indexOf("{");
+  const a = t.indexOf("[");
+  let v = a >= 0 && (o < 0 || a < o) ? tryParse(t.slice(a, t.lastIndexOf("]") + 1)) : tryParse(t.slice(o, t.lastIndexOf("}") + 1));
+  // Yanıt yarıda kesildiyse son tam satıra kadar kurtar
+  if (v === undefined && t.includes('"cues"')) {
+    const cut = t.lastIndexOf("},");
+    if (cut > 0) v = tryParse(t.slice(o, cut + 1) + "]}");
+  }
+  if (Array.isArray(v) && v.length && typeof v[0] === "object" && v[0] && "cues" in v[0]) v = v[0];
+  if (Array.isArray(v)) return { cues: v as Cue[] };
+  if (v && typeof v === "object") {
+    const d = v as { cues?: Cue[]; subtitles?: Cue[]; segments?: Cue[] };
+    return { ...(v as object), cues: d.cues || d.subtitles || d.segments || [] };
+  }
+  return null;
+}
+
+/** Ortak parça parça altyazı çıkarıcı. */
+async function transcribeChunks(
+  step: number,
+  duration: number,
+  part: (a: number, b: number) => Promise<{ content: Part; relative: boolean }>,
+  onProgress: (msg: string) => void,
+  signal: AbortSignal | undefined,
+  pr: Progress,
+): Promise<{ lang: string; cues: Cue[] }> {
+  const all: Cue[] = [...(pr.prev || [])];
+  let lang = pr.lang || "";
+  let total = duration;
+  const start = Math.max(0, Math.floor((pr.startAt || 0) / step) * step);
+  for (let a = start, k = 0; k < 400; a += step, k++) {
+    if (total && a >= total) break;
+    const b = a + step;
+    const n = total ? Math.ceil(total / step) : 0;
+    const label = `Altyazı çıkarılıyor: ${fmtTime(a)}–${fmtTime(total ? Math.min(b, total) : b)}${n ? ` (${Math.floor(a / step) + 1}/${n})` : ""}`;
+    onProgress(label);
+    let rel = false;
+    const text = await retry(async () => {
+      const { content, relative } = await part(a, b);
+      rel = relative;
+      onProgress(label);
+      return llmComplete(
+        [
+          {
+            role: "system",
+            content:
+              'You are a precise subtitle transcriber. Respond ONLY with JSON: {"lang": ISO 639-1 code of the main spoken language, "duration": total media length in seconds, "cues": [{"start": "MM:SS", "end": "MM:SS", "t": text}]} (use H:MM:SS when over an hour).',
+          },
+          {
+            role: "user",
+            content: [
+              content,
+              {
+                type: "text",
+                text: relative
+                  ? `Transcribe ALL speech (and sung lyrics) in this audio verbatim in the original spoken language, do not translate. The clip is ${fmtTime((total ? Math.min(b, total) : b) - a)} long; "start"/"end" are MM:SS timestamps from the start of THIS clip. Max ~84 characters per cue; split longer sentences. If there is no speech, return an empty cues array.`
+                  : `Transcribe ALL speech (and sung lyrics) verbatim in the original spoken language, do not translate. Only the part between ${fmtTime(a)} and ${fmtTime(b)} of the video. "start"/"end" are timestamps from the START of the video. Max ~84 characters per cue; split longer sentences. If there is no speech in this part, return an empty cues array.`,
+              },
+            ],
+          },
+        ],
+        { response_format: { type: "json_object" } },
+        signal,
+      );
+    }, signal);
+    const data = parseCueJson(text);
+    if (!data) {
+      console.warn("Altyazı yanıtı okunamadı:", text.slice(0, 500));
+      throw new Error("Gemini geçerli altyazı üretmedi, tekrar dene (kaldığı yerden devam eder).");
+    }
+    const off = rel ? a : 0;
+    if (!total && !rel && data.duration && data.duration > 0) total = data.duration;
     lang ||= data.lang || "";
     const lastEnd = all.length ? all[all.length - 1].e : -1;
-    for (const raw of (data.cues || []) as (Cue & { text?: string; f?: string })[]) {
-      const c = { s: Number(raw.s), e: Number(raw.e), t: String(raw.t ?? raw.text ?? raw.f ?? "") };
+    for (const raw of (data.cues || []) as (Cue & { text?: string; f?: string; start?: unknown; end?: unknown })[]) {
+      const c = { s: toSec(raw.start ?? raw.s) + off, e: toSec(raw.end ?? raw.e) + off, t: String(raw.t ?? raw.text ?? raw.f ?? "") };
       if (!c.t.trim() || !Number.isFinite(c.s) || !Number.isFinite(c.e)) continue;
-      if (c.s < a - 1 || c.s >= b + 1 || c.s < lastEnd - 0.5) continue; // bölüm dışı ya da tekrar
-      all.push({ s: c.s, e: c.e > c.s ? c.e : c.s + Math.max(1.5, c.t.length / 15), t: c.t.trim() });
+      if (c.s < a - 1 || c.s >= b + 1 || c.s < lastEnd - 0.5 || (total && c.s > total + 1)) continue; // parça dışı ya da tekrar
+      all.push({ s: c.s, e: c.e > c.s ? Math.min(c.e, c.s + 15) : c.s + Math.max(1.5, c.t.length / 15), t: c.t.trim() });
     }
+    all.sort((x, y) => x.s - y.s);
+    await pr.onPartial?.(all, total ? Math.min(b, total) : b, lang);
     if (!total) break; // süre bilinmiyorsa tek seferde biter
   }
-  all.sort((x, y) => x.s - y.s);
   return { lang, cues: all };
 }
 
-/** Altyazıları başka dile çevirir (yapay zekâ ile, 120'şer satırlık parçalar). */
-export async function translateCues(cues: Cue[], targetLang: string, onProgress: (done: number) => void): Promise<Cue[]> {
-  const out: Cue[] = [];
+/**
+ * Gemini'nin OpenAI uyumlu ucuyla altyazı (her anahtar türüyle çalışır).
+ * YouTube bağlantısı ya da küçük dosyanın data: adresi verilir; 5 dakikalık parçalar halinde istenir.
+ */
+export async function transcribeCompat(videoUrl: string, duration: number, onProgress: (msg: string) => void, signal?: AbortSignal, pr: Progress = {}) {
+  const content: Part = { type: "image_url", image_url: { url: videoUrl } };
+  try {
+    return await transcribeChunks(300, duration, async () => ({ content, relative: false }), onProgress, signal, pr);
+  } catch (e) {
+    if (duration > 40 * 60 && /503|high demand|UNAVAILABLE|yoğun/i.test((e as Error).message))
+      throw new Error(
+        "Gemini bu uzunluktaki videoyu bağlantıdan işleyemedi (YouTube bağlantısıyla yaklaşık 45 dakikayı aşan videolar çok büyük kalıyor). Çözüm: videoyu dosya olarak ekle — uygulama sesi 10'ar dakikalık parçalara ayırıp her uzunlukta çalışır. Ya da hazır bir SRT altyazı yükle.",
+      );
+    throw e;
+  }
+}
+
+/**
+ * Yerel dosya (her boyut/uzunluk): ses telefonda 10 dakikalık küçük mp3 parçalarına ayrılır ve
+ * sırayla Gemini'ye gönderilir. Dosya yüklenmez, anahtar türünden bağımsız çalışır.
+ */
+export async function transcribeAudio(file: File, duration: number, onProgress: (msg: string) => void, signal?: AbortSignal, pr: Progress = {}) {
+  const { audioChunk, toBase64 } = await import("./audioSplit");
+  const STEP = 600;
+  const cache = new Map<number, Part>();
+  return transcribeChunks(
+    STEP,
+    duration,
+    async (a) => {
+      let c = cache.get(a);
+      if (!c) {
+        onProgress(`Ses ayrılıyor: ${fmtTime(a)}–${fmtTime(Math.min(a + STEP, duration || a + STEP))}`);
+        const mp3 = await audioChunk(file, a, STEP, onProgress);
+        cache.clear();
+        c = { type: "input_audio", input_audio: { data: toBase64(mp3), format: "mp3" } };
+        cache.set(a, c);
+      }
+      return { content: c, relative: true };
+    },
+    onProgress,
+    signal,
+    pr,
+  );
+}
+
+/** Altyazıları başka dile çevirir (yapay zekâ ile, 120'şer satırlık parçalar; kaldığı yerden devam eder). */
+export async function translateCues(
+  cues: Cue[],
+  targetLang: string,
+  onProgress: (done: number) => void,
+  prev: Cue[] = [],
+  onPartial?: (out: Cue[]) => void | Promise<void>,
+  signal?: AbortSignal,
+): Promise<Cue[]> {
+  const out: Cue[] = prev.slice(0, cues.length);
   const N = 120;
-  for (let i = 0; i < cues.length; i += N) {
+  for (let i = out.length; i < cues.length; i += N) {
+    if (signal?.aborted) throw new DOMException("İptal", "AbortError");
     const part = cues.slice(i, i + N);
     const schema = z.object({ lines: z.array(z.string()) });
-    const r = await llmJson(
-      "You are a professional subtitle translator. Translate each subtitle line naturally and concisely (subtitles must stay short and readable), keeping the same number of lines in the same order. Keep names. Use context from neighbouring lines.",
-      `Translate these ${part.length} subtitle lines into ${targetLang}. Return {"lines": [...]} with exactly ${part.length} items.\n\n${part.map((c, k) => `${k + 1}. ${c.t}`).join("\n")}`,
-      schema,
-      "gemini-flash-lite-latest", // hızlı model: çeviri için yeterli, ana modelin günlük kotasını korur
+    const r = await retry(
+      () =>
+        llmJson(
+          "You are a professional subtitle translator. Translate each subtitle line naturally and concisely (subtitles must stay short and readable), keeping the same number of lines in the same order. Keep names. Use context from neighbouring lines.",
+          `Translate these ${part.length} subtitle lines into ${targetLang}. Return {"lines": [...]} with exactly ${part.length} items.\n\n${part.map((c, k) => `${k + 1}. ${c.t}`).join("\n")}`,
+          schema,
+          "gemini-flash-lite-latest", // hızlı model: çeviri için yeterli, ana modelin günlük kotasını korur
+        ),
+      signal,
     );
     part.forEach((c, k) => out.push({ ...c, t: (r.lines[k] || c.t).replace(/^\d+\.\s*/, "") }));
-    onProgress(Math.min(cues.length, i + N));
+    onProgress(out.length);
+    await onPartial?.(out);
   }
   return out;
 }

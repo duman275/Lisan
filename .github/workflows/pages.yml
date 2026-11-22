@@ -23,9 +23,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: X servis teşhisi (geçici)
-        run: bash scripts/diag-x.sh
-        continue-on-error: true
       - name: Telifsiz kitapları önbellekten al
         uses: actions/cache@v4
         with:
