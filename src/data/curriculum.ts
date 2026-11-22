@@ -1,0 +1,117 @@
+import type { Level } from "./languages";
+
+// Her CEFR seviyesi için yüksek getirili üniteler (her dile uygulanır; içerik yapay zekâyla dile özel üretilir).
+export const CURRICULUM: Record<Level, string[]> = {
+  A1: [
+    "Selamlaşma, kendini tanıtma ve 'olmak' fiili",
+    "Sayılar, saat ve tarih",
+    "Aile, insanlar ve iyelik",
+    "Günlük rutin: şimdiki/geniş zaman temel fiiller",
+    "Yiyecek, içecek ve kafede sipariş",
+    "Şehirde yön bulma ve yer edatları",
+    "Alışveriş, fiyatlar ve renkler",
+    "Sevdiklerin / sevmediklerin, hobiler",
+    "Soru kelimeleri ve basit sorular",
+    "Hava durumu, mevsimler ve kıyafetler",
+  ],
+  A2: [
+    "Geçmiş zaman: hafta sonun nasıldı?",
+    "Gelecek planlar ve niyetler",
+    "Seyahat: otel, bilet, havaalanı",
+    "Sağlık, doktorda ve vücut",
+    "Karşılaştırma ve üstünlük",
+    "Ev, eşyalar ve kiralama",
+    "İş ve meslekler",
+    "Telefonda konuşma ve randevu",
+    "Kurallar, zorunluluk ve tavsiye (must/should)",
+    "Deneyimler: hiç ... yaptın mı?",
+  ],
+  B1: [
+    "Hikâye anlatma: geçmiş zamanların birlikte kullanımı",
+    "Fikir bildirme, katılma ve itiraz",
+    "Koşul cümleleri (gerçek ve olası)",
+    "Edilgen yapı ve haber dili",
+    "Duygular, ilişkiler ve kişilik",
+    "Dolaylı anlatım (dedi ki...)",
+    "Teknoloji ve sosyal medya",
+    "Çevre ve şehir hayatı",
+    "Sorun çözme ve şikâyet etme",
+    "Phrasal verbs / deyimsel fiiller (en sık 30)",
+  ],
+  B2: [
+    "Varsayımsal geçmiş ve pişmanlık (keşke...)",
+    "İkna edici konuşma ve tartışma",
+    "Resmî e-posta ve iş yazışması",
+    "Bağlaçlar ve söylem belirteçleri ile akıcı metin",
+    "Haber, medya ve eleştirel okuma",
+    "Kültür, sanat ve film yorumlama",
+    "Kalıp sözler ve eşdizimler (collocations)",
+    "Ekonomi, para ve kariyer",
+    "Bilim ve gelecek senaryoları",
+    "Mizah, ironi ve ton farkları",
+  ],
+  C1: [
+    "Akademik dil ve soyut kavramlar",
+    "Vurgu için devrik yapılar ve cleft cümleler",
+    "Nüans: eş anlamlılar arasındaki ince farklar",
+    "Sunum yapma ve toplantı yönetme",
+    "Edebî metin çözümleme",
+    "Deyimler ve mecazlı dil",
+    "Hukuk, siyaset ve toplum",
+    "Kayıt (register) değiştirme: resmî ↔ samimi",
+    "Uzun metin özetleme ve sentez",
+    "Felsefe ve etik tartışmaları",
+  ],
+  C2: [
+    "Üslup ve yazar sesi taklidi",
+    "Ağız, aksan ve argo farkları",
+    "Kelime oyunları, şiir ve ritim",
+    "Arkaik ve klasik edebî dil",
+    "Retorik ve hitabet",
+    "Kültürel göndermeler ve ima",
+    "Uzmanlık alanında ileri terminoloji",
+    "Çeviri ve dil düzeyleri arası aktarım",
+    "Doğaçlama konuşma ve münazara",
+    "Yaratıcı yazarlık",
+  ],
+};
+
+export const METHOD = [
+  {
+    icon: "📈",
+    title: "Önce sıklık (Pareto)",
+    text: "En sık 1.000 kelime gündelik metinlerin ~%85'ini, 3.000 kelime ~%95'ini kapsar. Desteler sıklık sırasıyla üretilir; nadir kelimeye vakit harcanmaz.",
+  },
+  {
+    icon: "🧠",
+    title: "Aralıklı tekrar (SRS)",
+    text: "Her kart tam unutmak üzereyken tekrar gelir. Aynı sürede klasik ezbere göre çok daha kalıcı öğrenme sağlar. Günde 10–15 dakika yeter.",
+  },
+  {
+    icon: "📖",
+    title: "Anlaşılır girdi (i+1)",
+    text: "Seviyenin bir tık üstünde, %95'ini anladığın hikâyeler ve kitaplar. Bilmediğin kelimeye dokun, anlamını gör, desteye ekle.",
+  },
+  {
+    icon: "🎧",
+    title: "Dinle & gölgele (shadowing)",
+    text: "Cümleyi dinle, hemen ardından aynı ritimle tekrar et. Mikrofon telaffuzunu puanlar. Dinleme ve konuşma birlikte gelişir.",
+  },
+  {
+    icon: "💬",
+    title: "Çıktı + anında düzeltme",
+    text: "Yapay zekâ öğretmenle yazışarak/konuşarak pratik yap; her mesajda hataların düzeltilir ve sana yeniden konuşturan bir soru gelir.",
+  },
+  {
+    icon: "🔁",
+    title: "Etkin hatırlama",
+    text: "Okumak yerine kendini test et: alıştırmalar, boşluk doldurma ve çeviri. Beyin hatırlamaya çalışırken öğrenir.",
+  },
+];
+
+export const DAILY_PLAN = [
+  { min: 10, what: "Kelime tekrarı (SRS)", tab: "cards" },
+  { min: 15, what: "Ünite dersi + alıştırmalar", tab: "path" },
+  { min: 10, what: "Seviyene uygun hikâye oku/dinle", tab: "story" },
+  { min: 10, what: "Öğretmenle konuşma pratiği", tab: "tutor" },
+] as const;

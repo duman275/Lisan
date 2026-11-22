@@ -1,0 +1,123 @@
+import { useRef } from "react";
+import { DEFAULT_PROGRESS, DEFAULT_SETTINGS, useCards, useProgress, useSettings } from "../lib/store";
+import { narrator, nativeCode, useVoices } from "../lib/tts";
+import { NATIVE_LANGUAGES } from "../data/languages";
+import { useHealth } from "./common";
+
+export function SettingsView() {
+  const [settings, setSettings] = useSettings();
+  const [cards, setCards] = useCards();
+  const [progress, setProgress] = useProgress();
+  const health = useHealth();
+  const nativeVoices = useVoices(nativeCode(settings.nativeLang));
+  const allVoices = useVoices();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function exportData() {
+    const blob = new Blob([JSON.stringify({ settings, cards, progress }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `lisan-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  return (
+    <div className="stack">
+      <div className="card">
+        <h3>Genel</h3>
+        <div className="form">
+          <label>
+            Ana dilin (açıklamalar, özetler ve analizler bu dilde)
+            <select value={settings.nativeLang} onChange={(e) => setSettings((s) => ({ ...s, nativeLang: e.target.value }))}>
+              {NATIVE_LANGUAGES.map((l) => (
+                <option key={l.code} value={l.name}>{l.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Günlük hedef (dakika)
+            <input type="number" min={10} max={240} value={settings.dailyGoal} onChange={(e) => setSettings((s) => ({ ...s, dailyGoal: Number(e.target.value) || 45 }))} />
+          </label>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Sesler</h3>
+        <p className="muted small">
+          Sesler tarayıcı ve işletim sisteminden gelir ({allVoices.length} ses bulundu). En doğal sesler: Chrome'da “Google …”, Edge'de “… Online (Natural)”, macOS/iOS'ta
+          “Gelişmiş/Premium” sesler (Ayarlar → Erişilebilirlik → Sesli İçerik'ten indirilebilir).
+        </p>
+        <div className="form">
+          <label>
+            Okuma hızı: {settings.rate}×
+            <input type="range" min={0.5} max={2} step={0.05} value={settings.rate} onChange={(e) => setSettings((s) => ({ ...s, rate: Number(e.target.value) }))} />
+          </label>
+          <label>
+            Ses tonu: {settings.pitch}
+            <input type="range" min={0.5} max={1.5} step={0.05} value={settings.pitch} onChange={(e) => setSettings((s) => ({ ...s, pitch: Number(e.target.value) }))} />
+          </label>
+          <label>
+            Podcast sunucusu A
+            <select value={settings.podcastVoiceA || ""} onChange={(e) => setSettings((s) => ({ ...s, podcastVoiceA: e.target.value || undefined }))}>
+              <option value="">Otomatik</option>
+              {nativeVoices.map((v) => (
+                <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Podcast sunucusu B
+            <select value={settings.podcastVoiceB || ""} onChange={(e) => setSettings((s) => ({ ...s, podcastVoiceB: e.target.value || undefined }))}>
+              <option value="">Otomatik</option>
+              {nativeVoices.map((v) => (
+                <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="row wrap">
+          <button className="btn" onClick={() => narrator.say("Merhaba! Ben A sunucusuyum. Bugün harika bir kitap konuşacağız.", "tr-TR", settings.rate, settings.podcastVoiceA)}>A sesini dene</button>
+          <button className="btn" onClick={() => narrator.say("Ben de B sunucusuyum. Hadi başlayalım!", "tr-TR", settings.rate, settings.podcastVoiceB)}>B sesini dene</button>
+        </div>
+        {!narrator.supported() && <div className="error">Bu tarayıcı sesli okumayı desteklemiyor.</div>}
+      </div>
+
+      <div className="card">
+        <h3>Veriler</h3>
+        <p className="muted small">İlerlemen, kartların ve kütüphanen yalnızca bu cihazdaki tarayıcıda saklanır. Cihaz değiştirirken yedek al.</p>
+        <div className="row wrap">
+          <button className="btn" onClick={exportData}>⬇ Yedeği indir</button>
+          <button className="btn" onClick={() => fileRef.current?.click()}>⬆ Yedeği yükle</button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json"
+            hidden
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              try {
+                const d = JSON.parse(await f.text());
+                if (d.settings) setSettings({ ...DEFAULT_SETTINGS, ...d.settings });
+                if (Array.isArray(d.cards)) setCards(d.cards);
+                if (d.progress) setProgress({ ...DEFAULT_PROGRESS, ...d.progress });
+                alert("Yedek yüklendi.");
+              } catch {
+                alert("Geçersiz yedek dosyası.");
+              }
+            }}
+          />
+          <button className="btn danger" onClick={() => confirm("Tüm kartlar ve ilerleme silinsin mi?") && (setCards([]), setProgress(DEFAULT_PROGRESS))}>
+            Sıfırla
+          </button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Sunucu</h3>
+        <p>Yapay zekâ: {health.checked ? (health.ai ? "✅ açık" : "❌ kapalı — sunucuda ANTHROPIC_API_KEY tanımlayın") : "kontrol ediliyor…"}</p>
+      </div>
+    </div>
+  );
+}
