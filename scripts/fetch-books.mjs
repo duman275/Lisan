@@ -32,25 +32,37 @@ for (const b of books) {
     ok++;
     continue;
   }
+  // Resmî site bazen bulut sunucularını engeller; resmî aynalar sırayla denenir
   const urls = [
     `https://www.gutenberg.org/cache/epub/${b.gid}/pg${b.gid}.txt`,
+    `https://aleph.gutenberg.org/cache/epub/${b.gid}/pg${b.gid}.txt`,
+    `https://gutenberg.pglaf.org/cache/epub/${b.gid}/pg${b.gid}.txt`,
+    `https://mirrors.xmission.com/gutenberg/cache/epub/${b.gid}/pg${b.gid}.txt`,
     `https://www.gutenberg.org/files/${b.gid}/${b.gid}-0.txt`,
-    `https://www.gutenberg.org/ebooks/${b.gid}.txt.utf-8`,
   ];
+  const fails = [];
   for (const u of urls) {
     try {
-      const r = await fetch(u, { headers: { "User-Agent": "Lisan build (open-source)" } });
-      if (!r.ok) continue;
+      const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; Lisan-build/1.0; +https://github.com/duman275/Lisan)" }, redirect: "follow", signal: AbortSignal.timeout(30_000) });
+      if (!r.ok) {
+        fails.push(`${new URL(u).host}:${r.status}`);
+        continue;
+      }
       const raw = await r.text();
+      if (raw.length < 2000 || /<html/i.test(raw.slice(0, 500))) {
+        fails.push(`${new URL(u).host}:html`);
+        continue;
+      }
       const lang = LANG[/^Language:\s*(\w+)/m.exec(raw)?.[1]] || "en";
       writeFileSync(file, gzipSync(JSON.stringify({ title: b.title, author: b.author, lang, text: strip(raw) })));
       ok++;
-      console.log(`  ✓ ${b.gid} ${b.title}`);
+      console.log(`  ✓ ${b.gid} ${b.title} (${new URL(u).host})`);
       break;
     } catch (e) {
-      console.log(`  … ${b.gid} ${u}: ${e.message}`);
+      fails.push(`${new URL(u).host}:${e.cause?.code || e.name}`);
     }
   }
+  if (!existsSync(file)) console.log(`  ✗ ${b.gid} ${b.title} — ${fails.join(", ")}`);
   await new Promise((r) => setTimeout(r, 300)); // Gutenberg'e nazik ol
 }
 console.log(`${ok}/${books.length} kitap hazır`);
