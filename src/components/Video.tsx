@@ -17,6 +17,8 @@ import {
   transcribe,
   translateCues,
   uploadToGemini,
+  downloadVideoUrl,
+  youtubeId,
   type Cue,
   type VideoMeta,
 } from "../lib/video";
@@ -42,6 +44,108 @@ function useVideos(): [VideoMeta[], (fn: (v: VideoMeta[]) => VideoMeta[]) => Pro
 const label = (key: string, meta?: VideoMeta) =>
   key === "orig" ? `Orijinal${meta?.spokenLang ? ` (${langByCode(toBcp47(meta.spokenLang)).label})` : ""}` : `${langByCode(key).flag} ${langByCode(key).label}`;
 
+// ---------- Oynatıcı soyutlaması: telefondaki video ya da YouTube ----------
+
+interface MediaLike {
+  currentTime: number;
+  readonly paused: boolean;
+  readonly duration: number;
+  setVolume(v: number): void;
+  on(ev: "pause" | "seeking" | "time", fn: () => void): () => void;
+}
+
+class Emitter {
+  private fns = new Map<string, Set<() => void>>();
+  on(ev: string, fn: () => void) {
+    if (!this.fns.has(ev)) this.fns.set(ev, new Set());
+    this.fns.get(ev)!.add(fn);
+    return () => void this.fns.get(ev)!.delete(fn);
+  }
+  emit(ev: string) {
+    this.fns.get(ev)?.forEach((f) => f());
+  }
+}
+
+function htmlMedia(v: HTMLVideoElement): MediaLike {
+  return {
+    get currentTime() {
+      return v.currentTime;
+    },
+    set currentTime(t: number) {
+      v.currentTime = t;
+    },
+    get paused() {
+      return v.paused;
+    },
+    get duration() {
+      return Number.isFinite(v.duration) ? v.duration : 0;
+    },
+    setVolume: (x) => (v.volume = x),
+    on(ev, fn) {
+      const name = ev === "time" ? "timeupdate" : ev;
+      v.addEventListener(name, fn);
+      return () => v.removeEventListener(name, fn);
+    },
+  };
+}
+
+interface YTPlayer {
+  getCurrentTime(): number;
+  getDuration(): number;
+  getPlayerState(): number;
+  seekTo(s: number, allow: boolean): void;
+  setVolume(v: number): void;
+  destroy(): void;
+}
+type YTNamespace = { Player: new (el: HTMLElement, opts: Record<string, unknown>) => YTPlayer };
+
+let ytLoading: Promise<YTNamespace> | null = null;
+function loadYouTubeApi(): Promise<YTNamespace> {
+  const w = window as unknown as { YT?: YTNamespace & { loaded?: number }; onYouTubeIframeAPIReady?: () => void };
+  if (w.YT?.Player) return Promise.resolve(w.YT);
+  ytLoading ??= new Promise((resolve, reject) => {
+    w.onYouTubeIframeAPIReady = () => resolve(w.YT!);
+    const sc = document.createElement("script");
+    sc.src = "https://www.youtube.com/iframe_api";
+    sc.onerror = () => reject(new Error("YouTube oynatıcısı yüklenemedi (internet bağlantısını kontrol et)."));
+    document.head.appendChild(sc);
+  });
+  return ytLoading;
+}
+
+/** YouTube oynatıcısını MediaLike olarak sarar (zaman, duraklatma ve atlama takibi). */
+function youtubeMedia(player: YTPlayer, em: Emitter): MediaLike & { dispose(): void } {
+  let lastT = 0;
+  let lastAt = performance.now();
+  const timer = window.setInterval(() => {
+    const t = player.getCurrentTime?.() ?? 0;
+    const now = performance.now();
+    const expected = lastT + (player.getPlayerState?.() === 1 ? (now - lastAt) / 1000 : 0);
+    if (Math.abs(t - expected) > 1.5) em.emit("seeking");
+    lastT = t;
+    lastAt = now;
+    em.emit("time");
+  }, 250);
+  return {
+    get currentTime() {
+      return player.getCurrentTime?.() ?? 0;
+    },
+    set currentTime(t: number) {
+      player.seekTo(t, true);
+      em.emit("seeking");
+    },
+    get paused() {
+      return player.getPlayerState?.() !== 1;
+    },
+    get duration() {
+      return player.getDuration?.() || 0;
+    },
+    setVolume: (x) => player.setVolume?.(Math.round(x * 100)),
+    on: (ev, fn) => em.on(ev, fn),
+    dispose: () => window.clearInterval(timer),
+  };
+}
+
 export function VideoTab() {
   const [videos, update] = useVideos();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -54,6 +158,53 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
   const ref = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState("");
   const [err, setErr] = useState("");
+  const [link, setLink] = useState("");
+  const dl = useRef<AbortController | null>(null);
+
+  async function addLink() {
+    setErr("");
+    const url = link.trim();
+    if (!/^https?:\/\//i.test(url)) return setErr("Geçerli bir bağlantı yapıştır (https://…).");
+    const id = uid();
+    const yt = youtubeId(url);
+    if (yt) {
+      const meta: VideoMeta = { id, name: `YouTube: ${yt}`, size: 0, type: "youtube", duration: 0, added: Date.now(), subs: {}, source: { kind: "youtube", url: `https://www.youtube.com/watch?v=${yt}`, videoId: yt } };
+      // Başlığı al (oEmbed, anahtar gerekmez)
+      try {
+        const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(meta.source!.url)}`);
+        if (r.ok) meta.name = ((await r.json()) as { title?: string }).title || meta.name;
+      } catch {
+        /* başlık alınamazsa kimlik kalır */
+      }
+      await update((l) => [meta, ...l]);
+      setLink("");
+      onOpen(id);
+      return;
+    }
+    const ctrl = new AbortController();
+    dl.current = ctrl;
+    try {
+      setStatus("Bağlantıya bağlanılıyor…");
+      const f = await downloadVideoUrl(id, url, setStatus, ctrl.signal);
+      const file = await loadVideoFile(id);
+      const duration = file
+        ? await new Promise<number>((res) => {
+            const v = document.createElement("video");
+            v.preload = "metadata";
+            v.onloadedmetadata = () => res(Number.isFinite(v.duration) ? v.duration : 0);
+            v.onerror = () => res(0);
+            v.src = URL.createObjectURL(file);
+          })
+        : 0;
+      await update((l) => [{ id, name: f.name, size: f.size, type: f.type, duration, added: Date.now(), subs: {}, source: { kind: "url", url } }, ...l]);
+      setStatus("");
+      setLink("");
+      onOpen(id);
+    } catch (e) {
+      setStatus("");
+      if ((e as Error).name !== "AbortError") setErr((e as Error).message);
+    }
+  }
 
   async function add(file: File) {
     setErr("");
@@ -105,9 +256,25 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
           </p>
           <p className="muted small">MP4, WebM, MOV… Ses dosyası (MP3, M4A) da olur.</p>
         </div>
+        <h3 className="mt">🔗 Bağlantıdan ekle</h3>
+        <form className="row wrap" onSubmit={(e) => (e.preventDefault(), void addLink())}>
+          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="YouTube ya da doğrudan video bağlantısı (.mp4, .webm…)" inputMode="url" />
+          <button className="btn primary" disabled={!link.trim() || Boolean(status)}>
+            Ekle
+          </button>
+        </form>
+        <p className="muted small">
+          <b>YouTube:</b> video uygulamada YouTube oynatıcısıyla açılır (indirilmez); altyazı, çeviri, iki satır altyazı ve dublaj yine çalışır — Gemini videoyu doğrudan
+          YouTube'dan okur (herkese açık videolar). <b>Doğrudan video bağlantısı:</b> 2 GB'a kadar telefona indirilir (site izin veriyorsa).
+        </p>
         {status && (
           <div className="status">
             <span className="spinner" /> {status}
+            {dl.current && (
+              <button className="btn ghost small" onClick={() => dl.current?.abort()}>
+                Durdur
+              </button>
+            )}
           </div>
         )}
         {err && <div className="error">{err}</div>}
@@ -119,10 +286,11 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
           {videos.map((v) => (
             <div key={v.id} className="lib-item">
               <button className="lib-open" onClick={() => onOpen(v.id)}>
-                <span className="pill">🎬</span>
+                <span className="pill">{v.source?.kind === "youtube" ? "▶ YouTube" : v.source?.kind === "url" ? "🔗" : "🎬"}</span>
                 <strong>{v.name}</strong>
                 <span className="muted small">
-                  {fmtSize(v.size)} · {fmtTime(v.duration)} · altyazı: {Object.keys(v.subs).length ? Object.keys(v.subs).map((k) => label(k, v)).join(", ") : "yok"}
+                  {v.size ? `${fmtSize(v.size)} · ` : ""}
+                  {fmtTime(v.duration)} · altyazı: {Object.keys(v.subs).length ? Object.keys(v.subs).map((k) => label(k, v)).join(", ") : "yok"}
                 </span>
               </button>
               <button
@@ -157,8 +325,11 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
   const [settings] = useSettings();
   const health = useHealth();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const ytRef = useRef<HTMLDivElement>(null);
+  const isYT = meta.source?.kind === "youtube";
   const [src, setSrc] = useState("");
   const [missing, setMissing] = useState(false);
+  const [media, setMedia] = useState<MediaLike | null>(null);
   const [time, setTime] = useState(0);
   const tracks = Object.keys(meta.subs);
   const [sub1, setSub1] = useState<string>(tracks.find((k) => k !== "orig") || tracks[0] || "");
@@ -172,23 +343,71 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
   const abort = useRef<AbortController | null>(null);
   const subFile = useRef<HTMLInputElement>(null);
 
+  // Video kaynağı: telefondaki dosya ya da YouTube oynatıcısı
   useEffect(() => {
     let url = "";
-    void loadVideoFile(meta.id).then((f) => {
-      if (!f) return setMissing(true);
-      url = URL.createObjectURL(f);
-      setSrc(url);
-    });
+    let disposed = false;
+    let yt: { player: YTPlayer; media: ReturnType<typeof youtubeMedia> } | null = null;
+    if (isYT && meta.source?.kind === "youtube") {
+      const em = new Emitter();
+      const videoId = meta.source.videoId;
+      loadYouTubeApi()
+        .then((YT) => {
+          if (disposed || !ytRef.current) return;
+          const holder = document.createElement("div");
+          ytRef.current.appendChild(holder);
+          const player = new YT.Player(holder, {
+            videoId,
+            width: "100%",
+            height: "100%",
+            playerVars: { playsinline: 1, rel: 0, cc_load_policy: 0, modestbranding: 1 },
+            events: {
+              onReady: () => {
+                if (disposed) return;
+                const m = youtubeMedia(player, em);
+                yt = { player, media: m };
+                setMedia(m);
+                const d = player.getDuration();
+                if (d && !meta.duration) void update((l) => l.map((x) => (x.id === meta.id ? { ...x, duration: d } : x)));
+              },
+              onStateChange: (e: { data: number }) => {
+                if (e.data === 2 || e.data === 0) em.emit("pause");
+              },
+            },
+          });
+        })
+        .catch((e) => setErr((e as Error).message));
+    } else {
+      void loadVideoFile(meta.id).then((f) => {
+        if (!f) return setMissing(true);
+        url = URL.createObjectURL(f);
+        setSrc(url);
+      });
+    }
     return () => {
+      disposed = true;
       if (url) URL.revokeObjectURL(url);
+      yt?.media.dispose();
+      yt?.player.destroy();
       abort.current?.abort();
     };
-  }, [meta.id]);
+  }, [meta.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dosya videosu hazır olunca medya arayüzü
+  useEffect(() => {
+    if (!isYT && src && videoRef.current) setMedia(htmlMedia(videoRef.current));
+  }, [src, isYT]);
+
+  // Zamanı takip et (altyazı için)
+  useEffect(() => {
+    if (!media) return;
+    return media.on("time", () => setTime(media.currentTime));
+  }, [media]);
 
   // Kaldığı yeri hatırla
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v || !src) return;
+    const v = media;
+    if (!v) return;
     void get<number>(`video:pos:${meta.id}`).then((p) => p && (v.currentTime = p));
     const save = () => void set(`video:pos:${meta.id}`, v.currentTime);
     const t = window.setInterval(save, 5000);
@@ -196,7 +415,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       window.clearInterval(t);
       save();
     };
-  }, [src, meta.id]);
+  }, [media, meta.id]);
 
   const c1 = meta.subs[sub1];
   const c2 = meta.subs[sub2];
@@ -212,16 +431,19 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
     const ctrl = new AbortController();
     abort.current = ctrl;
     try {
-      const f = await loadVideoFile(meta.id);
-      if (!f) throw new Error("Video dosyası bulunamadı.");
-      let g = meta.gemini && meta.gemini.expires > Date.now() ? meta.gemini : undefined;
+      let g: { uri: string; mime: string } | undefined =
+        meta.source?.kind === "youtube" ? { uri: meta.source.url, mime: "" } : meta.gemini && meta.gemini.expires > Date.now() ? meta.gemini : undefined;
       if (!g) {
+        const f = await loadVideoFile(meta.id);
+        if (!f) throw new Error("Video dosyası bulunamadı.");
         setBusy("Gemini'ye yükleniyor… %0");
         const up = await uploadToGemini(f, (p) => setBusy(`Gemini'ye yükleniyor… %${p}${p === 100 ? " — işleniyor" : ""}`), ctrl.signal);
-        g = { ...up, expires: Date.now() + 47 * 3600_000 };
-        await update((l) => l.map((x) => (x.id === meta.id ? { ...x, gemini: g } : x)));
+        const saved = { ...up, expires: Date.now() + 47 * 3600_000 };
+        g = saved;
+        await update((l) => l.map((x) => (x.id === meta.id ? { ...x, gemini: saved } : x)));
       }
-      const r = await transcribe(g, meta.duration, (msg) => setBusy(msg), ctrl.signal);
+      const duration = meta.duration || media?.duration || 0;
+      const r = await transcribe(g, duration, (msg) => setBusy(msg), ctrl.signal);
       if (!r.cues.length) throw new Error("Videoda konuşma bulunamadı.");
       await saveSubs("orig", r.cues, { spokenLang: r.lang });
       setSub1("orig");
@@ -251,7 +473,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
   }
 
   // ---------- Dublaj ----------
-  const dub = useDubber(videoRef, dubOn ? meta.subs[dubLang] : undefined, dubLang, origVol);
+  const dub = useDubber(media, dubOn ? meta.subs[dubLang] : undefined, dubLang, origVol);
 
   const llmReady = health.llm || Boolean(settings.llmKey);
   const geminiReady = Boolean(settings.llmKey) && settings.llmBaseUrl.includes("generativelanguage");
@@ -263,11 +485,19 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       </button>
       <div className="card video-card">
         <h3 className="video-title">{meta.name}</h3>
-        {missing ? (
+        {isYT ? (
+          <div className="video-wrap yt">
+            <div ref={ytRef} className="yt-holder" />
+            <div className="subs-overlay" aria-live="polite">
+              {i2 >= 0 && <div className="sub sub2">{c2![i2].t}</div>}
+              {i1 >= 0 && <div className="sub">{c1![i1].t}</div>}
+            </div>
+          </div>
+        ) : missing ? (
           <p className="error">Video dosyası bu cihazda bulunamadı (tarayıcı verileri silinmiş olabilir). Altyazılar duruyor; videoyu yeniden yükleyebilirsin.</p>
         ) : (
           <div className="video-wrap">
-            <video ref={videoRef} src={src} controls playsInline onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} />
+            <video ref={videoRef} src={src} controls playsInline />
             <div className="subs-overlay" aria-live="polite">
               {i2 >= 0 && <div className="sub sub2">{c2![i2].t}</div>}
               {i1 >= 0 && <div className="sub">{c1![i1].t}</div>}
@@ -408,7 +638,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
                 key={k}
                 className={`tline ${k === i1 ? "now" : ""}`}
                 onClick={() => {
-                  if (videoRef.current) videoRef.current.currentTime = c.s + 0.01;
+                  if (media) media.currentTime = c.s + 0.01;
                 }}
               >
                 <span className="muted small">{fmtTime(c.s)}</span> {c.t}
@@ -423,7 +653,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
 }
 
 /** Video oynarken altyazıları zamanında seslendirir. */
-function useDubber(videoRef: React.RefObject<HTMLVideoElement | null>, cues: Cue[] | undefined, langKey: string, origVol: number): string {
+function useDubber(media: MediaLike | null, cues: Cue[] | undefined, langKey: string, origVol: number): string {
   const [info, setInfo] = useState("");
   const audio = useMemo(() => new Audio(), []);
   const lang = langKey === "orig" ? "" : langKey;
@@ -431,13 +661,11 @@ function useDubber(videoRef: React.RefObject<HTMLVideoElement | null>, cues: Cue
   const last = useRef(-1);
 
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.volume = cues ? origVol : 1;
-  }, [cues, origVol, videoRef]);
+    media?.setVolume(cues ? origVol : 1);
+  }, [cues, origVol, media]);
 
   useEffect(() => {
-    const v = videoRef.current;
+    const v = media;
     clips.current.forEach((p) => p.then((u) => URL.revokeObjectURL(u)).catch(() => {}));
     clips.current.clear();
     last.current = -1;
@@ -496,16 +724,16 @@ function useDubber(videoRef: React.RefObject<HTMLVideoElement | null>, cues: Cue
       speechSynthesis.cancel();
       last.current = -1;
     };
-    v.addEventListener("pause", stop);
-    v.addEventListener("seeking", stop);
+    const off1 = v.on("pause", stop);
+    const off2 = v.on("seeking", stop);
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
-      v.removeEventListener("pause", stop);
-      v.removeEventListener("seeking", stop);
+      off1();
+      off2();
       stop();
     };
-  }, [cues, lang, audio, videoRef]);
+  }, [cues, lang, audio, media]);
 
   return info;
 }

@@ -22,6 +22,64 @@ export interface VideoMeta {
   spokenLang?: string; // videoda konuşulan dil (ISO)
   subs: Record<string, Cue[]>; // dil adı → altyazılar ("Orijinal", "Türkçe", "English"…)
   gemini?: { name: string; uri: string; mime: string; expires: number };
+  /** Bağlantıdan eklenen video: YouTube (gömülü oynatılır) ya da doğrudan dosya bağlantısı */
+  source?: { kind: "youtube"; url: string; videoId: string } | { kind: "url"; url: string };
+}
+
+/** YouTube bağlantısından video kimliğini çıkarır (watch, youtu.be, shorts, embed, live). */
+export function youtubeId(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    const host = u.hostname.replace(/^www\.|^m\./, "");
+    if (host === "youtu.be") return u.pathname.slice(1).split("/")[0] || null;
+    if (host === "youtube.com" || host === "music.youtube.com" || host === "youtube-nocookie.com") {
+      if (u.searchParams.get("v")) return u.searchParams.get("v");
+      const m = /^\/(shorts|embed|live|v)\/([\w-]{6,})/.exec(u.pathname);
+      if (m) return m[2];
+    }
+  } catch {
+    /* geçersiz bağlantı */
+  }
+  return null;
+}
+
+/** Doğrudan video bağlantısını akış hâlinde telefona indirir (site izin veriyorsa). */
+export async function downloadVideoUrl(id: string, url: string, onProgress: (msg: string) => void, signal?: AbortSignal): Promise<{ name: string; size: number; type: string }> {
+  let r: Response;
+  try {
+    r = await fetch(url, { signal });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw new Error("Bu site videonun uygulama içinden indirilmesine izin vermiyor. Videoyu telefona indirip “Video seç” ile ekleyebilirsin; YouTube bağlantıları ise doğrudan eklenebilir.");
+  }
+  if (!r.ok || !r.body) throw new Error(`Video indirilemedi (${r.status}).`);
+  const type = (r.headers.get("content-type") || "").split(";")[0];
+  if (type && !/^(video|audio)\/|octet-stream/.test(type)) throw new Error(`Bu bağlantı bir video dosyası değil (${type}). Sayfa bağlantısı yerine doğrudan .mp4/.webm bağlantısı gerekir; YouTube bağlantıları ise doğrudan eklenebilir.`);
+  const total = Number(r.headers.get("content-length")) || 0;
+  if (total > MAX_VIDEO) throw new Error(`Video ${fmtSize(total)} — en fazla 2 GB indirilebilir.`);
+  await navigator.storage.persist?.().catch(() => false);
+  const fh = await (await dir()).getFileHandle(id, { create: true });
+  const w = await fh.createWritable();
+  const reader = r.body.getReader();
+  let got = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      got += value.byteLength;
+      if (got > MAX_VIDEO) throw new Error("Video 2 GB'ı aştı, indirme durduruldu.");
+      await w.write(value);
+      onProgress(total ? `İndiriliyor… %${Math.round((got / total) * 100)} (${fmtSize(got)} / ${fmtSize(total)})` : `İndiriliyor… ${fmtSize(got)}`);
+    }
+    await w.close();
+  } catch (e) {
+    await w.abort().catch(() => {});
+    await deleteVideoFile(id);
+    throw e;
+  }
+  let name = decodeURIComponent(new URL(url).pathname.split("/").pop() || "") || "video";
+  if (!/\.\w{2,4}$/.test(name)) name += type.includes("webm") ? ".webm" : ".mp4";
+  return { name, size: got, type: type || "video/mp4" };
 }
 
 // ---------- Cihazda saklama (Origin Private File System) ----------
@@ -197,7 +255,7 @@ export async function transcribe(
         {
           role: "user",
           parts: [
-            { fileData: { mimeType: file.mime, fileUri: file.uri }, ...(duration ? { videoMetadata: { startOffset: `${a}s`, endOffset: `${b}s` } } : {}) },
+            { fileData: file.mime ? { mimeType: file.mime, fileUri: file.uri } : { fileUri: file.uri }, ...(duration ? { videoMetadata: { startOffset: `${a}s`, endOffset: `${b}s` } } : {}) },
             {
               text: `Transcribe ALL speech in this part of the video (from ${a} to ${b} seconds of the full video) verbatim, in the original spoken language (do not translate). Return subtitle cues: "s" = start time and "e" = end time in seconds measured from the BEGINNING OF THE FULL VIDEO, "t" = text (max ~84 characters, split longer sentences). Include song lyrics if sung. "lang" = ISO 639-1 code of the main spoken language. If there is no speech, return an empty cues array.`,
             },
