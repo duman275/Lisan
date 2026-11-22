@@ -160,6 +160,29 @@ export function VideoTab() {
   return <VideoList videos={videos} update={update} onOpen={setOpenId} />;
 }
 
+/** Dili bilinmeyen (yüklenen) altyazının dilini kabaca tahmin eder. */
+function guessSubLang(cues?: Cue[]): string {
+  const t = (cues || []).slice(0, 40).map((c) => c.t).join(" ").toLowerCase();
+  if (!t) return "en";
+  if (/[\u0400-\u04ff]/.test(t)) return "ru";
+  if (/[\u0600-\u06ff]/.test(t)) return "ar";
+  if (/[\u3040-\u30ff]/.test(t)) return "ja";
+  if (/[\uac00-\ud7af]/.test(t)) return "ko";
+  if (/[\u4e00-\u9fff]/.test(t)) return "zh";
+  const score = (re: RegExp) => (t.match(re) || []).length;
+  const c: [string, number][] = [
+    ["tr", score(/[ğışç]|\b(ve|bir|bu|için|ne|çok)\b/g)],
+    ["es", score(/[ñ¿¡]|\b(el|los|que|una|por|está)\b/g)],
+    ["de", score(/[ß]|\b(der|die|und|das|ist|nicht)\b/g)],
+    ["fr", score(/\b(le|les|et|est|une|pour|dans|c'est)\b/g)],
+    ["it", score(/\b(il|che|di|non|sono|una|per)\b/g)],
+    ["pt", score(/[ãõ]|\b(não|uma|para|com|você)\b/g)],
+    ["en", score(/\b(the|and|you|is|that|to|of)\b/g)],
+  ];
+  c.sort((x, y) => y[1] - x[1]);
+  return c[0][1] > 0 ? c[0][0] : "en";
+}
+
 function probeDuration(src: string): Promise<number> {
   return new Promise<number>((res) => {
     const v = document.createElement("video");
@@ -480,6 +503,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       if (!r.cues.length) throw new Error("Videoda konuşma bulunamadı.");
       await saveSubs("orig", r.cues, { spokenLang: r.lang });
       setSub1("orig");
+      setDubLang((d) => d || "orig");
       setBusy("");
     };
     try {
@@ -539,7 +563,8 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
   }
 
   // ---------- Dublaj ----------
-  const dub = useDubber(media, dubOn ? meta.subs[dubLang] : undefined, dubLang, origVol);
+  const dubBcp = dubLang === "orig" ? toBcp47(meta.spokenLang || guessSubLang(meta.subs.orig)) : dubLang;
+  const dub = useDubber(media, dubOn ? meta.subs[dubLang] : undefined, dubBcp, origVol);
 
   const llmReady = health.llm || Boolean(settings.llmKey);
   const geminiReady = Boolean(settings.llmKey) && settings.llmBaseUrl.includes("generativelanguage");
@@ -627,6 +652,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
               if (!cues.length) return setErr("Altyazı dosyası okunamadı.");
               await saveSubs("orig", cues);
               setSub1("orig");
+              setDubLang((d) => d || "orig");
             }}
           />
         </div>
@@ -675,24 +701,31 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
         <div className="row wrap">
           <select value={dubLang} onChange={(e) => setDubLang(e.target.value)} aria-label="Dublaj dili">
             <option value="">Dublaj dili seç…</option>
-            {tracks
-              .filter((k) => k !== "orig" || meta.spokenLang)
-              .map((k) => (
+            {tracks.map((k) => (
                 <option key={k} value={k}>
                   {label(k, meta)}
                 </option>
               ))}
           </select>
           <label className="check">
-            <input type="checkbox" checked={dubOn} disabled={!dubLang} onChange={(e) => setDubOn(e.target.checked)} /> Dublajı aç
+            <input
+              type="checkbox"
+              checked={dubOn}
+              disabled={!dubLang}
+              onChange={(e) => {
+                if (e.target.checked) unlockAudio();
+                setDubOn(e.target.checked);
+              }}
+            />{" "}
+            Dublajı aç
           </label>
         </div>
-        {dubLang && <VoicePicker lang={dubLang === "orig" ? toBcp47(meta.spokenLang) : dubLang} />}
+        {dubLang && <VoicePicker lang={dubBcp} />}
         <label className="small">
           Orijinal ses: %{Math.round(origVol * 100)}
           <input type="range" min={0} max={1} step={0.05} value={origVol} onChange={(e) => setOrigVol(Number(e.target.value))} />
         </label>
-        {dub && <p className="muted small">{dub}</p>}
+        {dub && <p className="small dub-status">{dub}</p>}
       </div>
 
       {c1 && c1.length > 0 && (
@@ -718,11 +751,25 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
   );
 }
 
+/** Telefon tarayıcıları kullanıcı dokunmadan ses çalmayı engelleyebilir: dokunma anında sesi “açar”. */
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+const dubAudio = typeof Audio !== "undefined" ? new Audio() : (null as unknown as HTMLAudioElement);
+function unlockAudio() {
+  try {
+    dubAudio.src = SILENT_WAV;
+    void dubAudio.play().catch(() => {});
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    speechSynthesis.speak(u);
+  } catch {
+    /* desteklenmiyor */
+  }
+}
+
 /** Video oynarken altyazıları zamanında seslendirir. */
-function useDubber(media: MediaLike | null, cues: Cue[] | undefined, langKey: string, origVol: number): string {
+function useDubber(media: MediaLike | null, cues: Cue[] | undefined, lang: string, origVol: number): string {
   const [info, setInfo] = useState("");
-  const audio = useMemo(() => new Audio(), []);
-  const lang = langKey === "orig" ? "" : langKey;
+  const audio = dubAudio;
   const clips = useRef(new Map<number, Promise<string>>());
   const last = useRef(-1);
 
@@ -735,47 +782,80 @@ function useDubber(media: MediaLike | null, cues: Cue[] | undefined, langKey: st
     clips.current.forEach((p) => p.then((u) => URL.revokeObjectURL(u)).catch(() => {}));
     clips.current.clear();
     last.current = -1;
-    if (!v || !cues?.length) return;
+    if (!v || !cues?.length) {
+      setInfo("");
+      return;
+    }
     let raf = 0;
+    let alive = true;
+    let storedVoices: string[] = [];
+    let neuralBroken = false;
+    void narrator.storedVoices().then((x) => (storedVoices = x));
     const voiceOf = (text: string) => narrator.voiceFor({ text, lang });
+    const neuralId = (text: string) => {
+      const vid = voiceOf(text);
+      return vid?.startsWith(NEURAL_PREFIX) && !neuralBroken ? vid.slice(NEURAL_PREFIX.length) : null;
+    };
     const neuralClip = (k: number) => {
-      const vid = voiceOf(cues[k].t);
-      if (!vid?.startsWith(NEURAL_PREFIX)) return null;
+      const id = neuralId(cues[k].t);
+      if (!id) return null;
       let c = clips.current.get(k);
       if (!c) {
-        c = synthNeural(cues[k].t, vid.slice(NEURAL_PREFIX.length));
+        c = synthNeural(cues[k].t, id);
         c.catch(() => clips.current.delete(k));
         clips.current.set(k, c);
       }
       return c;
     };
-    const speak = (k: number) => {
+    const speakDevice = (k: number) => {
       const c = cues[k];
       const dur = Math.max(0.6, c.e - c.s);
-      // Sonraki 3 cümleyi önceden hazırla
-      for (let j = k + 1; j <= Math.min(k + 3, cues.length - 1); j++) neuralClip(j);
-      const clip = neuralClip(k);
-      if (clip) {
-        clip
-          .then((url) => {
-            if (last.current !== k || v.paused) return;
-            audio.src = url;
-            audio.onloadedmetadata = () => {
-              audio.playbackRate = Math.min(1.7, Math.max(1, audio.duration / dur));
-            };
-            void audio.play().catch(() => {});
-            setInfo("");
-          })
-          .catch(() => setInfo("Nöral ses yüklenemedi; telefonun sesi kullanılıyor."));
-        return;
-      }
-      speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(c.t);
-      const dv = findVoice(voiceOf(c.t), lang);
+      const dv = findVoice(neuralId(c.t) ? undefined : voiceOf(c.t), lang);
       if (dv) u.voice = dv;
       u.lang = dv?.lang || lang;
       u.rate = Math.min(1.7, Math.max(1, c.t.length / 15 / dur));
-      speechSynthesis.speak(u);
+      u.onerror = (e) => e.error !== "interrupted" && e.error !== "canceled" && setInfo(`⚠️ Telefon sesi hata verdi: ${e.error}`);
+      // Android'de cancel() hemen ardından speak() sesi yutabiliyor: kısa bekle
+      if (speechSynthesis.speaking || speechSynthesis.pending) {
+        speechSynthesis.cancel();
+        setTimeout(() => alive && last.current === k && speechSynthesis.speak(u), 80);
+      } else speechSynthesis.speak(u);
+      setInfo(`🔊 ${k + 1}/${cues.length} · ${dv?.name || "telefonun varsayılan sesi"}${dv ? "" : lang ? ` (${lang} sesi bulunamadı)` : ""}`);
+    };
+    const speak = (k: number) => {
+      const c = cues[k];
+      const dur = Math.max(0.6, c.e - c.s);
+      const id = neuralId(c.t);
+      // Nöral ses henüz indirilmediyse indirilirken telefonun sesi kullanılır
+      if (id && !storedVoices.includes(id)) {
+        void narrator
+          .downloadVoice(id, (pct) => alive && setInfo(`⬇ Nöral ses indiriliyor %${pct} — bu sırada telefonun sesi kullanılıyor`))
+          .then(() => void narrator.storedVoices().then((x) => (storedVoices = x)))
+          .catch(() => (neuralBroken = true));
+        speakDevice(k);
+        return;
+      }
+      for (let j = k + 1; j <= Math.min(k + 3, cues.length - 1); j++) neuralClip(j);
+      const clip = neuralClip(k);
+      if (!clip) return speakDevice(k);
+      clip
+        .then((url) => {
+          if (!alive || last.current !== k || v.paused) return;
+          audio.src = url;
+          audio.onloadedmetadata = () => {
+            audio.playbackRate = Math.min(1.7, Math.max(1, audio.duration / dur));
+          };
+          audio.play().then(
+            () => setInfo(`🔊 ${k + 1}/${cues.length} · nöral ses`),
+            (e) => setInfo(`⚠️ Ses çalınamadı (${(e as Error).name}). “Dublajı aç” kutusunu kapatıp yeniden aç.`),
+          );
+        })
+        .catch(() => {
+          neuralBroken = true;
+          setInfo("Nöral ses yüklenemedi; telefonun sesi kullanılıyor.");
+          speakDevice(k);
+        });
     };
     const tick = () => {
       const k = cueAt(cues, v.currentTime);
@@ -793,7 +873,9 @@ function useDubber(media: MediaLike | null, cues: Cue[] | undefined, langKey: st
     const off1 = v.on("pause", stop);
     const off2 = v.on("seeking", stop);
     raf = requestAnimationFrame(tick);
+    setInfo("Dublaj açık: videoyu oynat.");
     return () => {
+      alive = false;
       cancelAnimationFrame(raf);
       off1();
       off2();
