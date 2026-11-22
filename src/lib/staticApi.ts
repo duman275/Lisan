@@ -1,6 +1,14 @@
 // Sunucusuz (statik) mod: GitHub Pages gibi yerlerde, telefondan doğrudan çalışır.
 // Ücretsiz motor tarayıcıda çalışır; veriler sitenin data/ ve books/ klasörlerinden okunur.
-import { freeJsonTask, freeReady, initFreeData, NEEDS_LLM, wikiText } from "../../shared/freeCore";
+import { communityLinks, findBookPages, freeJsonTask, freeReady, initFreeData, NEEDS_LLM, wikiText } from "../../shared/freeCore";
+import { buildJsonPrompt, buildStreamPrompt, type JsonRequest, type StreamRequest } from "../../shared/tasks";
+import { browserLlmReady, llmJson, llmStream } from "./browserLLM";
+import { getSettings } from "./store";
+
+/** Telefonda yapay zekâ kullanılabilir mi (anahtar girilmiş ve “yalnızca ücretsiz” seçilmemiş) */
+export function phoneLlm() {
+  return browserLlmReady() && getSettings().agentProvider !== "free";
+}
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -34,6 +42,20 @@ export function ensureFreeData(): Promise<void> {
 }
 
 export async function staticJson(body: Record<string, unknown>): Promise<unknown> {
+  if (phoneLlm()) {
+    try {
+      const { system, content, schema } = buildJsonPrompt(body as unknown as JsonRequest);
+      return await llmJson(system, content, schema);
+    } catch (err) {
+      // Yapay zekâ başarısız olursa (sınır, ağ) ücretsiz motoru dene
+      try {
+        await ensureFreeData();
+        return freeJsonTask(body as unknown as Parameters<typeof freeJsonTask>[0]);
+      } catch {
+        throw err;
+      }
+    }
+  }
   await ensureFreeData();
   return freeJsonTask(body as unknown as Parameters<typeof freeJsonTask>[0]);
 }
@@ -41,8 +63,36 @@ export async function staticJson(body: Record<string, unknown>): Promise<unknown
 export async function staticStream(
   body: Record<string, unknown>,
   h: { onText?: (chunk: string, full: string) => void; onStatus?: (t: string) => void; onSource?: (s: { url: string; title: string }) => void },
+  signal?: AbortSignal,
 ) {
   const task = body.task as string;
+  if (phoneLlm()) {
+    const { system, messages, webResearch } = buildStreamPrompt(body as unknown as StreamRequest);
+    const sources: { url: string; title: string }[] = [];
+    let extra = "";
+    if (webResearch && body.title) {
+      h.onStatus?.("Wikipedia'dan kaynak toplanıyor…");
+      const pages = await findBookPages(body.title as string, body.author as string | undefined).catch(() => []);
+      for (const pg of pages) sources.push({ url: pg.url, title: `Wikipedia (${pg.lang.toUpperCase()}): ${pg.title}` });
+      sources.push(...communityLinks(body.title as string, body.author as string | undefined));
+      sources.forEach((s) => h.onSource?.(s));
+      extra = pages
+        .map((pg) => `<source url="${pg.url}">\n${pg.sections.map((x) => (x.heading ? `## ${x.heading}\n` : "") + x.text).join("\n").slice(0, 12000)}\n</source>`)
+        .join("\n");
+      if (extra) extra = `\n\nReference material (cite it; say what is uncertain):\n${extra}`;
+    }
+    h.onStatus?.("Yazıyor…");
+    let full = "";
+    await llmStream(
+      [{ role: "system", content: system }, ...messages.map((m, i) => ({ role: m.role, content: i === messages.length - 1 ? m.content + extra : m.content }))] as Parameters<typeof llmStream>[0],
+      (t) => {
+        full += t;
+        h.onText?.(t, full);
+      },
+      signal,
+    );
+    return { text: full, sources };
+  }
   const title = body.title as string | undefined;
   if ((task === "summary" || task === "analysis") && title && !(body.text as string | undefined)?.trim()) {
     h.onStatus?.("Wikipedia'dan derleniyor…");
@@ -56,7 +106,7 @@ export async function staticStream(
     return { text: full, sources: r.sources };
   }
   throw new Error(
-    "Bu özellik bir dil modeli gerektirir ve telefondaki (sunucusuz) sürümde yok. İngilizce dersler, kartlar, seviye testi, sözlük, özet ve analiz ücretsiz çalışır.",
+    "Bu özellik bir yapay zekâ servisi gerektirir. Ayarlar → “Telefonda yapay zekâ” bölümünden ücretsiz bir Google Gemini anahtarı ekleyebilirsin (aistudio.google.com/apikey).",
   );
 }
 
@@ -74,10 +124,10 @@ export async function staticGet(url: string): Promise<unknown> {
     return {
       ok: true,
       ai: true,
-      llm: false,
+      llm: phoneLlm(),
       free: true,
       static: true,
-      agent: { claude: false, ollama: false, ollamaModel: "", ollamaModels: [] },
+      agent: { claude: false, ollama: false, browser: phoneLlm(), ollamaModel: "", ollamaModels: [] },
     };
   }
   const text = /^\/api\/books\/(\d+)\/text/.exec(url);

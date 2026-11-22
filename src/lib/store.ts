@@ -62,6 +62,11 @@ export interface Settings {
   wakeWord: boolean; // "Lisan" diye seslenince sürekli dinleme
   agentProvider: "auto" | "claude" | "ollama" | "free"; // tüm yapay zekâ özellikleri için kaynak
   agentSpeak: boolean; // asistan yanıtlarını sesli oku
+  // Telefonda (sunucusuz sürüm) doğrudan bağlanılan yapay zekâ servisi
+  llmProvider: string;
+  llmBaseUrl: string;
+  llmModel: string;
+  llmKey: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -75,6 +80,10 @@ export const DEFAULT_SETTINGS: Settings = {
   wakeWord: false,
   agentProvider: "auto",
   agentSpeak: true,
+  llmProvider: "gemini",
+  llmBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+  llmModel: "gemini-2.5-flash",
+  llmKey: "",
 };
 
 export function useSettings(): [Settings, (v: Settings | ((prev: Settings) => Settings)) => void] {

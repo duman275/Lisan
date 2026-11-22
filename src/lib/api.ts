@@ -19,7 +19,7 @@ export const STATIC = import.meta.env.VITE_STATIC === "1";
 const withProvider = (body: Record<string, unknown>) => ({ provider: getSettings().agentProvider, ...body });
 
 export async function streamAI(body: Record<string, unknown>, h: StreamHandlers = {}, signal?: AbortSignal): Promise<StreamResult> {
-  if (STATIC) return staticStream(body, h);
+  if (STATIC) return staticStream(body, h, signal);
   const res = await fetch("/api/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

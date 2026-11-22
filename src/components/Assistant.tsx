@@ -4,6 +4,8 @@ import { canRecognize, continuousListener, listen, setListenHooks } from "../lib
 import { useSettings } from "../lib/store";
 import { narrator, nativeCode } from "../lib/tts";
 import { useHealth } from "./common";
+import { STATIC } from "../lib/api";
+import { llmAgentTurn } from "../lib/browserLLM";
 
 interface ToolCall {
   id: string;
@@ -70,8 +72,10 @@ export function Assistant() {
     async (text: string) => {
       setOpen(true);
       setBubbles((b) => [...b, { who: "me", text }]);
-      if (!health.agent.claude && !health.agent.ollama) {
-        const msg = "Asistan için sunucuda Claude API anahtarı ya da bilgisayarında ücretsiz Ollama gerekli. Basit sesli komutlar (duraklat, devam, kartları aç…) yine de çalışır.";
+      if (!health.agent.claude && !health.agent.ollama && !health.agent.browser) {
+        const msg = STATIC
+          ? "Asistan için Ayarlar → “Telefonda yapay zekâ” bölümüne ücretsiz bir Gemini anahtarı ekle. Basit sesli komutlar (duraklat, devam, kartları aç…) şimdiden çalışır."
+          : "Asistan için sunucuda Claude API anahtarı ya da bilgisayarında ücretsiz Ollama gerekli. Basit sesli komutlar (duraklat, devam, kartları aç…) yine de çalışır.";
         setBubbles((b) => [...b, { who: "bot", text: msg }]);
         return;
       }
@@ -80,13 +84,19 @@ export function Assistant() {
       setBusy(true);
       try {
         for (let step = 0; step < 8; step++) {
-          const res = await fetch("/api/agent", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ history: h, state: await appState(), provider: settings.agentProvider }),
-          });
-          const turn = await res.json();
-          if (!res.ok) throw new Error(turn.error || `Sunucu hatası (${res.status})`);
+          let turn: { text: string; calls?: ToolCall[]; raw?: unknown; provider?: string };
+          if (STATIC) {
+            // Telefonda: tarayıcı doğrudan yapay zekâ servisine bağlanır
+            turn = await llmAgentTurn(h, await appState());
+          } else {
+            const res = await fetch("/api/agent", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ history: h, state: await appState(), provider: settings.agentProvider }),
+            });
+            turn = { text: "", ...(await res.json()) };
+            if (!res.ok) throw new Error((turn as { error?: string }).error || `Sunucu hatası (${res.status})`);
+          }
           h.push({ role: "assistant", text: turn.text || "", calls: turn.calls || [], raw: turn.raw, provider: turn.provider });
           if (turn.text) setBubbles((b) => [...b, { who: "bot", text: turn.text }]);
           if (!turn.calls?.length) {
@@ -119,7 +129,7 @@ export function Assistant() {
         }
       }
     },
-    [health.agent.claude, health.agent.ollama, settings.agentProvider, say],
+    [health.agent.claude, health.agent.ollama, health.agent.browser, settings.agentProvider, say],
   );
 
   const handleCommand = useCallback(
@@ -220,7 +230,9 @@ export function Assistant() {
           <div className="row between">
             <strong>🤖 Lisan Asistan</strong>
             <span className="muted small">
-              {(settings.agentProvider === "ollama" && health.agent.ollama) || (!health.agent.claude && health.agent.ollama)
+              {health.agent.browser
+                ? "Telefonda yapay zekâ"
+                : (settings.agentProvider === "ollama" && health.agent.ollama) || (!health.agent.claude && health.agent.ollama)
                 ? `Ollama · ${health.agent.ollamaModel} (ücretsiz)`
                 : health.agent.claude
                   ? "Claude"

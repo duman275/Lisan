@@ -26,7 +26,7 @@ export interface Health {
   llm: boolean; // dil modeli var (Claude veya Ollama)
   free: boolean; // ücretsiz veri motoru hazır
   checked: boolean;
-  agent: { claude: boolean; ollama: boolean; ollamaModel: string; ollamaModels: string[] };
+  agent: { claude: boolean; ollama: boolean; browser?: boolean; ollamaModel: string; ollamaModels: string[] };
 }
 export const NO_HEALTH: Health = { ai: false, llm: false, free: false, checked: false, agent: { claude: false, ollama: false, ollamaModel: "", ollamaModels: [] } };
 export const HealthContext = createContext<Health>(NO_HEALTH);

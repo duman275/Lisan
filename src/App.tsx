@@ -36,11 +36,13 @@ export default function App() {
         .then((h) => setHealth({ ai: h.ai, llm: h.llm, free: h.free, agent: h.agent, checked: true }))
         .catch(() => setHealth({ ...NO_HEALTH, checked: true }));
     void check();
+    window.addEventListener("lisan:health", check);
     const t = window.setInterval(check, 60_000); // Ollama sonradan açılırsa algıla
     const onHash = () => setRoute((r) => ({ ...parseHash(), prefill: r.prefill }));
     window.addEventListener("hashchange", onHash);
     return () => {
       window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("lisan:health", check);
       window.clearInterval(t);
     };
   }, []);
@@ -59,7 +61,7 @@ export default function App() {
       <NavContext.Provider value={{ route, go }}>
         <header className="top">
           <a className="brand" href="#/learn" onClick={(e) => (e.preventDefault(), go({ tab: "learn" }))}>
-            <span className="logo">ل</span> Lisan
+            <span className="logo">L</span> Lisan
           </a>
           <nav className="tabs">
             {TABS.map((t) => (

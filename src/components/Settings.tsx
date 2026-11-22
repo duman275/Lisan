@@ -1,4 +1,7 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { STATIC } from "../lib/api";
+import { LLM_PRESETS, listModels, testLlm } from "../lib/browserLLM";
+import { InstallButton } from "./Install";
 import { DEFAULT_PROGRESS, DEFAULT_SETTINGS, useCards, useProgress, useSettings } from "../lib/store";
 import { narrator, nativeCode, useVoices } from "../lib/tts";
 import { NATIVE_LANGUAGES } from "../data/languages";
@@ -24,6 +27,12 @@ export function SettingsView() {
 
   return (
     <div className="stack">
+      <div className="card">
+        <h3>📲 Uygulamayı telefona yükle</h3>
+        <p className="muted small">Lisan'ı ana ekranına uygulama olarak ekle: tam ekran açılır, çevrimdışı da çalışır (dersler, kartlar, indirilen kitaplar).</p>
+        <InstallButton />
+      </div>
+      {STATIC && <PhoneAI />}
       <div className="card">
         <h3>Genel</h3>
         <div className="form">
@@ -165,6 +174,126 @@ export function SettingsView() {
           <li>Claude API: {health.agent.claude ? "✅ anahtar var" : "— anahtar yok (isteğe bağlı)"}</li>
         </ul>
       </div>
+    </div>
+  );
+}
+
+/** Telefonda (sunucusuz) yapay zekâ: ücretsiz bir servis anahtarı ile öğretmen, podcast, hikâye ve asistan çalışır. */
+function PhoneAI() {
+  const [settings, setSettings] = useSettings();
+  const [status, setStatus] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const preset = LLM_PRESETS.find((p) => p.id === settings.llmProvider) || LLM_PRESETS[0];
+
+  useEffect(() => {
+    window.dispatchEvent(new Event("lisan:health"));
+  }, [settings.llmKey, settings.llmModel, settings.llmBaseUrl, settings.agentProvider]);
+
+  async function test() {
+    setBusy(true);
+    setStatus("Deneniyor…");
+    try {
+      const out = await testLlm();
+      setStatus(`✅ Çalışıyor! Model yanıtı: “${out.slice(0, 60)}”`);
+    } catch (e) {
+      setStatus(`❌ ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>🤖 Telefonda yapay zekâ (öğretmen, podcast, hikâye, asistan)</h3>
+      <p className="small">
+        Öğretmenle sohbet, podcast'e dönüştürme, hikâye yazma, sayfayı anlatma ve asistan için ücretsiz bir yapay zekâ anahtarı ekle. En kolayı:{" "}
+        <b>Google Gemini</b> — <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer noopener">aistudio.google.com/apikey</a> adresinde Google hesabınla
+        “Create API key”e bas, anahtarı kopyalayıp aşağıya yapıştır. Kredi kartı gerekmez.
+      </p>
+      <div className="form">
+        <label>
+          Servis
+          <select
+            value={preset.id}
+            onChange={(e) => {
+              const p = LLM_PRESETS.find((x) => x.id === e.target.value)!;
+              setModels([]);
+              setStatus("");
+              setSettings((s) => ({ ...s, llmProvider: p.id, llmBaseUrl: p.baseUrl || s.llmBaseUrl, llmModel: p.model || s.llmModel }));
+            }}
+          >
+            {LLM_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          API anahtarı (yalnızca bu telefonda saklanır)
+          <input
+            type="password"
+            autoComplete="off"
+            value={settings.llmKey}
+            placeholder="Anahtarı yapıştır…"
+            onChange={(e) => setSettings((s) => ({ ...s, llmKey: e.target.value.trim() }))}
+          />
+        </label>
+        <label>
+          Model
+          <input list="llm-models" value={settings.llmModel} onChange={(e) => setSettings((s) => ({ ...s, llmModel: e.target.value.trim() }))} />
+          <datalist id="llm-models">
+            {models.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+        </label>
+        {preset.id === "custom" && (
+          <label>
+            Servis adresi (OpenAI uyumlu)
+            <input value={settings.llmBaseUrl} placeholder="https://…/v1" onChange={(e) => setSettings((s) => ({ ...s, llmBaseUrl: e.target.value.trim() }))} />
+          </label>
+        )}
+      </div>
+      <p className="muted small">
+        {preset.note}
+        {preset.keyUrl && (
+          <>
+            {" "}
+            Anahtar al:{" "}
+            <a href={preset.keyUrl} target="_blank" rel="noreferrer noopener">
+              {preset.keyUrl.replace(/^https:\/\//, "")}
+            </a>
+          </>
+        )}
+      </p>
+      <div className="row wrap">
+        <button className="btn primary" disabled={busy || !settings.llmKey} onClick={test}>
+          Dene
+        </button>
+        <button
+          className="btn"
+          disabled={busy || !settings.llmKey}
+          onClick={async () => {
+            try {
+              const list = await listModels(settings.llmBaseUrl, settings.llmKey);
+              setModels(list);
+              setStatus(`${list.length} model bulundu; Model kutusuna dokunup seçebilirsin.`);
+            } catch (e) {
+              setStatus(`❌ ${(e as Error).message}`);
+            }
+          }}
+        >
+          Modelleri listele
+        </button>
+        {settings.llmKey && (
+          <button className="btn ghost" onClick={() => (setSettings((s) => ({ ...s, llmKey: "" })), setStatus(""))}>
+            Anahtarı sil
+          </button>
+        )}
+      </div>
+      {status && <p className="small">{status}</p>}
     </div>
   );
 }
