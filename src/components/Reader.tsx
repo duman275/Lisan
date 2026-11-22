@@ -4,7 +4,7 @@ import { loadItem, savePosition, useSettings, type LibraryItem } from "../lib/st
 import { splitSentences } from "../lib/text";
 import { narrator, nativeCode, useNarrator, useVoices, VOICE_PRESETS, type Segment } from "../lib/tts";
 import { LANGUAGES } from "../data/languages";
-import { AiOutput, useHealth, useNav, useStream } from "./common";
+import { AiOutput, useLLM, useNav, useStream } from "./common";
 import { Clickable, WordPopup, type WordTarget } from "./WordPopup";
 
 const PAGE = 40; // sayfa başına cümle
@@ -33,7 +33,7 @@ export function Reader({ id, onBack }: { id: string; onBack: () => void }) {
 function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }) {
   const [settings, setSettings] = useSettings();
   const { go, route } = useNav();
-  const health = useHealth();
+  const llm = useLLM();
   const n = useNarrator();
   const [lang, setLang] = useState(item.lang || (item.kind === "pdf" || item.kind === "paste" ? guessLang(item.text) : nativeCode(settings.nativeLang)));
   const sentences = useMemo(() => splitSentences(item.text, lang), [item.text, lang]);
@@ -173,7 +173,7 @@ function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }
         <div className="toolbar">
           <button
             className="btn"
-            disabled={!health.ai}
+            disabled={!llm}
             onClick={() => {
               setPanel("explain");
               void explain.run({ task: "explain", text: pageText, title: item.title, nativeLang: settings.nativeLang, mode: "Retell and explain this page so I can listen instead of reading." });
@@ -181,12 +181,12 @@ function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }
           >
             🧠 Bu sayfayı bana anlat
           </button>
-          <button className="btn" disabled={!health.ai || podBusy} onClick={makePodcast}>
+          <button className="btn" disabled={!llm || podBusy} onClick={makePodcast}>
             {podBusy ? "Podcast hazırlanıyor…" : "🎙 Bu bölümü podcast yap"}
           </button>
           <button
             className="btn"
-            disabled={!health.ai}
+            disabled={!llm}
             onClick={() => {
               setPanel("summary");
               void explain.run({ task: "summary", text: item.text, title: item.title, nativeLang: settings.nativeLang, mode: "kisa" });

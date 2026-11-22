@@ -84,7 +84,7 @@ export function SettingsView() {
       </div>
 
       <div className="card">
-        <h3>Asistan ve sesli komutlar</h3>
+        <h3>Yapay zekâ kaynağı, asistan ve sesli komutlar</h3>
         <p className="muted small">
           🎙 düğmesine bas (ya da Ctrl+Shift+Boşluk) ve konuş: “duraklat”, “devam”, “sonraki”, “hızlandır”, “20 dakika sonra kapat”, “kartları aç”, “kütüphaneye git” gibi
           kısa komutlar yapay zekâ olmadan anında çalışır. Daha karmaşık istekler (“Suç ve Ceza'yı aç ve sesli oku”, “bana 10 iş İngilizcesi kalıbı ekle”) asistana gider.
@@ -100,9 +100,10 @@ export function SettingsView() {
             <input type="checkbox" checked={settings.agentSpeak} onChange={(e) => setSettings((s) => ({ ...s, agentSpeak: e.target.checked }))} /> Asistan yanıtlarını sesli oku
           </label>
           <label>
-            Asistan yapay zekâsı
+            Yapay zekâ kaynağı (dersler, öğretmen, özet, analiz, asistan)
             <select value={settings.agentProvider} onChange={(e) => setSettings((s) => ({ ...s, agentProvider: e.target.value as typeof s.agentProvider }))}>
-              <option value="auto">Otomatik</option>
+              <option value="auto">Otomatik (Claude → Ollama → ücretsiz kaynaklar)</option>
+              <option value="free">Yalnızca ücretsiz kaynaklar (Tatoeba, Wikipedia — model yok)</option>
               <option value="ollama">Ollama — bilgisayarında yerel, tamamen ücretsiz</option>
               <option value="claude">Claude — en akıllı (API kullanımı ücretli)</option>
             </select>
@@ -158,7 +159,11 @@ export function SettingsView() {
 
       <div className="card">
         <h3>Sunucu</h3>
-        <p>Yapay zekâ: {health.checked ? (health.ai ? "✅ açık" : "❌ kapalı — sunucuda ANTHROPIC_API_KEY tanımlayın") : "kontrol ediliyor…"}</p>
+        <ul className="small">
+          <li>Ücretsiz veri motoru (Tatoeba + Wikipedia): {health.free ? "✅ hazır" : "❌ veri yok — node scripts/build-data.mjs"}</li>
+          <li>Ollama (yerel, ücretsiz): {health.agent.ollama ? `✅ ${health.agent.ollamaModel}` : "❌ çalışmıyor"}</li>
+          <li>Claude API: {health.agent.claude ? "✅ anahtar var" : "— anahtar yok (isteğe bağlı)"}</li>
+        </ul>
       </div>
     </div>
   );

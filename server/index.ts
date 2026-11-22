@@ -4,7 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { aiAvailable, describeError, jsonTask, MODEL, streamTask, type JsonRequest, type StreamRequest } from "./ai.ts";
 import { bookText, searchBooks } from "./books.ts";
-import { AGENT_MODEL, agentTurn, checkOllama, OLLAMA_MODEL, pickProvider, type AgentMsg } from "./agent.ts";
+import { AGENT_MODEL, agentTurn, pickProvider, type AgentMsg } from "./agent.ts";
+import { checkOllama, OLLAMA_MODEL } from "./ollama.ts";
+import { freeAvailable } from "./free.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -25,19 +27,15 @@ function rateLimit(req: express.Request, res: express.Response, next: express.Ne
   next();
 }
 
-function requireAi(_req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (!aiAvailable()) {
-    res.status(503).json({ error: "Yapay zekâ özellikleri için sunucuda ANTHROPIC_API_KEY tanımlanmalı (.env dosyasına bakın)." });
-    return;
-  }
-  next();
-}
-
 app.get("/api/health", async (_req, res) => {
   const ollama = await checkOllama();
+  const free = freeAvailable();
   res.json({
     ok: true,
-    ai: aiAvailable(),
+    // ai: içerik özellikleri bir şekilde çalışabiliyor mu (Claude, Ollama ya da ücretsiz veri motoru)
+    ai: aiAvailable() || ollama.available || free,
+    llm: aiAvailable() || ollama.available,
+    free,
     model: MODEL,
     agent: { claude: aiAvailable(), claudeModel: AGENT_MODEL, ollama: ollama.available, ollamaModel: OLLAMA_MODEL, ollamaModels: ollama.models },
   });
@@ -49,7 +47,7 @@ app.post("/api/agent", rateLimit, async (req, res) => {
   const provider = await pickProvider(pref);
   if (!provider) {
     res.status(503).json({
-      error: "Asistan için ya sunucuda ANTHROPIC_API_KEY tanımlayın ya da bilgisayarınızda ücretsiz Ollama'yı çalıştırın (README'ye bakın). Basit sesli komutlar (duraklat, devam, sonraki, sekme aç) yine de çalışır.",
+      error: "Asistan bir dil modeli gerektirir: bilgisayarına ücretsiz Ollama kur (ollama.com, sonra “ollama pull qwen3:8b”) ya da sunucuya Claude API anahtarı ekle. Basit sesli komutlar (duraklat, devam, sonraki, sekme aç) yine de çalışır.",
     });
     return;
   }
@@ -65,7 +63,7 @@ app.post("/api/agent", rateLimit, async (req, res) => {
 });
 
 const STREAM_TASKS = new Set(["tutor", "story", "summary", "analysis", "explain"]);
-app.post("/api/stream", requireAi, rateLimit, async (req, res) => {
+app.post("/api/stream", rateLimit, async (req, res) => {
   const body = req.body as StreamRequest;
   if (!STREAM_TASKS.has(body?.task)) {
     res.status(400).json({ error: "Bilinmeyen görev" });
@@ -75,7 +73,7 @@ app.post("/api/stream", requireAi, rateLimit, async (req, res) => {
 });
 
 const JSON_TASKS = new Set(["lesson", "deck", "define", "placement", "podcast", "translate"]);
-app.post("/api/json", requireAi, rateLimit, async (req, res) => {
+app.post("/api/json", rateLimit, async (req, res) => {
   const body = req.body as JsonRequest;
   if (!JSON_TASKS.has(body?.task)) {
     res.status(400).json({ error: "Bilinmeyen görev" });
@@ -122,5 +120,6 @@ if (process.env.NODE_ENV === "production") {
 
 const port = Number(process.env.PORT || 8787);
 app.listen(port, () => {
+  console.log(`Ücretsiz veri motoru: ${freeAvailable() ? "hazır" : "veri yok (node scripts/build-data.mjs)"}`);
   console.log(`Lisan API http://localhost:${port}  (model: ${MODEL}, yapay zekâ: ${aiAvailable() ? "açık" : "kapalı — ANTHROPIC_API_KEY yok"})`);
 });

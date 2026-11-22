@@ -60,7 +60,7 @@ export interface Settings {
   dailyGoal: number; // dakika
   voiceCommands: boolean; // mikrofon düğmesi ile sesli komut
   wakeWord: boolean; // "Lisan" diye seslenince sürekli dinleme
-  agentProvider: "auto" | "claude" | "ollama";
+  agentProvider: "auto" | "claude" | "ollama" | "free"; // tüm yapay zekâ özellikleri için kaynak
   agentSpeak: boolean; // asistan yanıtlarını sesli oku
 }
 

@@ -3,6 +3,8 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { Response } from "express";
 import { z } from "zod";
 import * as P from "./prompts.ts";
+import { communityLinks, findBookPages, freeAvailable, freeDeck, freeDefine, freeLesson, freePlacement, wikiText } from "./free.ts";
+import { checkOllama, ollamaJson, ollamaStream, type OllamaMessage } from "./ollama.ts";
 
 export const MODEL = process.env.LISAN_MODEL || "claude-opus-5-5";
 // Güvenlik sınıflandırıcısı bir isteği reddederse sunucu tarafında otomatik yedek model devreye girer.
@@ -19,6 +21,25 @@ export function getClient(): Anthropic {
 
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
+export type Engine = "claude" | "ollama" | "free";
+
+/** İstenen kaynağa göre kullanılacak motoru seçer: Claude → Ollama (ücretsiz, yerel) → ücretsiz veri motoru. */
+export async function resolveEngine(pref?: string): Promise<Engine> {
+  if (pref === "free") return "free";
+  const ollama = (await checkOllama()).available;
+  if (pref === "ollama" && ollama) return "ollama";
+  if (pref === "claude" && aiAvailable()) return "claude";
+  if (aiAvailable()) return "claude";
+  if (ollama) return "ollama";
+  return "free";
+}
+
+export const NEEDS_LLM =
+  "Bu özellik bir dil modeli gerektirir. Ücretsiz seçenek: bilgisayarına Ollama kur (ollama.com) ve “ollama pull qwen3:8b” çalıştır; Lisan onu otomatik bulur. Alternatif: sunucuya Claude API anahtarı ekle.";
+
+const isEnglish = (l?: string) => !l || /^english/i.test(l);
+const isTurkish = (l?: string) => !l || /^türkçe|^turkish/i.test(l);
+
 // ---------- Akış (SSE) görevleri ----------
 
 export interface StreamRequest {
@@ -33,6 +54,7 @@ export interface StreamRequest {
   mode?: string;
   focus?: string[];
   text?: string;
+  provider?: string;
 }
 
 const LIMIT = 180_000; // tek istekte gönderilecek azami karakter (≈45K token)
@@ -136,7 +158,48 @@ export async function streamTask(req: StreamRequest, res: Response) {
   res.on("close", () => (aborted = true));
 
   try {
+    const engine = await resolveEngine(req.provider);
+    if (engine === "free") {
+      if ((req.task === "summary" || req.task === "analysis") && req.title && !req.text?.trim().length) {
+        sse(res, { type: "status", text: "Wikipedia'dan derleniyor…" });
+        const r = await wikiText(req.task, req.title, req.author);
+        for (const src of r.sources) sse(res, { type: "source", ...src });
+        // Okuma hissi için paragraf paragraf gönder
+        for (const part of r.text.split(/(?<=\n\n)/)) {
+          if (aborted) break;
+          sse(res, { type: "text", text: part });
+        }
+        sse(res, { type: "done" });
+        return;
+      }
+      throw new Error(req.task === "summary" ? `Kendi metnini özetlemek için dil modeli gerekir. ${NEEDS_LLM}` : NEEDS_LLM);
+    }
     const { system, messages, tools, effort } = buildStream(req);
+    if (engine === "ollama") {
+      const om: OllamaMessage[] = [{ role: "system", content: system }];
+      let extra = "";
+      if (req.task === "analysis" && req.title) {
+        // Web araması yerine: Wikipedia sayfalarını bağlam olarak ver
+        sse(res, { type: "status", text: "Wikipedia'dan kaynak toplanıyor…" });
+        const pages = await findBookPages(req.title, req.author).catch(() => []);
+        for (const pg of pages) sse(res, { type: "source", url: pg.url, title: `Wikipedia (${pg.lang.toUpperCase()}): ${pg.title}` });
+        for (const l of communityLinks(req.title, req.author)) sse(res, { type: "source", ...l });
+        extra = pages
+          .map((pg) => `<source url="${pg.url}">\n${pg.sections.map((x) => (x.heading ? `## ${x.heading}\n` : "") + x.text).join("\n").slice(0, 12000)}\n</source>`)
+          .join("\n");
+        if (extra) extra = `\n\nReference material (cite it; if it is missing something, say what is uncertain):\n${extra}`;
+      }
+      messages.forEach((m, i) => {
+        const text = typeof m.content === "string" ? m.content : "";
+        om.push({ role: m.role, content: i === messages.length - 1 ? text + extra : text });
+      });
+      sse(res, { type: "status", text: "Yerel model yazıyor…" });
+      const ctrl = new AbortController();
+      res.on("close", () => ctrl.abort());
+      await ollamaStream(om, (t) => sse(res, { type: "text", text: t }), ctrl.signal);
+      sse(res, { type: "done" });
+      return;
+    }
     const convo = [...messages];
     const seen = new Set<string>();
 
@@ -267,13 +330,41 @@ export interface JsonRequest {
   title?: string;
   /** Kurs odağı (ör. günlük konuşma, ana dil gibi konuşma) */
   courseFocus?: string;
+  /** Ücretsiz ders motoru için ünite anahtarı ("A1:0", "course:native:3") */
+  unitKey?: string;
+  provider?: string;
+}
+
+function freeJson(req: JsonRequest): unknown {
+  if (!freeAvailable()) throw new Error(`Ücretsiz veri dosyaları bulunamadı (data/). ${NEEDS_LLM}`);
+  const enTr = isEnglish(req.targetLang) && isTurkish(req.nativeLang);
+  const onlyEn = "Ücretsiz (yapay zekâsız) içerik şimdilik İngilizce ↔ Türkçe içindir. Diğer diller için ücretsiz Ollama kurabilirsiniz (Ayarlar → Asistan ve yapay zekâ).";
+  switch (req.task) {
+    case "lesson":
+      if (!enTr) throw new Error(onlyEn);
+      if (!req.unitKey) throw new Error("Ünite bilgisi eksik.");
+      return freeLesson(req.unitKey, req.level || "A1", req.topic || "");
+    case "deck":
+      if (!enTr) throw new Error(onlyEn);
+      return freeDeck(req.level || "A1", Math.min(req.count || 20, 40), req.exclude || [], req.topic);
+    case "define":
+      if (!isTurkish(req.nativeLang) || (req.targetLang && !isEnglish(req.targetLang))) throw new Error(onlyEn);
+      return freeDefine(req.word || "");
+    case "placement":
+      if (!enTr) throw new Error(onlyEn);
+      return freePlacement();
+    default:
+      throw new Error(NEEDS_LLM);
+  }
 }
 
 export async function jsonTask(req: JsonRequest): Promise<unknown> {
+  const engine = await resolveEngine(req.provider);
+  if (engine === "free") return freeJson(req);
   const native = req.nativeLang || "Türkçe";
   let system: string;
   let content: string;
-  let format: ReturnType<typeof betaZodOutputFormat>;
+  let schema: z.ZodType;
   let effort: Effort = "low";
 
   switch (req.task) {
@@ -282,7 +373,7 @@ export async function jsonTask(req: JsonRequest): Promise<unknown> {
       content = `Create a lesson. Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${req.level}. Unit: ${req.topic}.${
         req.courseFocus ? ` Course focus: ${clip(req.courseFocus, 1000)}` : ""
       } Include 10-14 vocabulary items, a 8-12 line dialogue, 8 exercises (mix of kinds) and 5 shadowing sentences.`;
-      format = betaZodOutputFormat(Lesson);
+      schema = Lesson;
       effort = "medium";
       break;
     case "deck":
@@ -290,32 +381,34 @@ export async function jsonTask(req: JsonRequest): Promise<unknown> {
       content = `Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${req.level}. ${req.topic ? `Theme: ${req.topic}. ` : ""}Give the next ${Math.min(req.count || 20, 40)} most useful words/chunks for this level.${
         req.exclude?.length ? ` The learner already knows these, do not repeat them: ${req.exclude.slice(-400).join(", ")}` : ""
       }`;
-      format = betaZodOutputFormat(Deck);
+      schema = Deck;
       break;
     case "define":
       system = P.DEFINE_SYSTEM;
       content = `Word: "${req.word}". Language of the word: ${req.targetLang || "detect it"}. Sentence context: "${clip(req.context, 600)}". Learner's native language: ${native}.`;
-      format = betaZodOutputFormat(Define);
+      schema = Define;
       break;
     case "translate":
       system = "You are a precise literary translator. Translate faithfully and naturally.";
       content = `Translate into ${native}:\n\n${clip(req.text, 8000)}`;
-      format = betaZodOutputFormat(Translate);
+      schema = Translate;
       break;
     case "placement":
       system = P.PLACEMENT_SYSTEM;
       content = `Target language: ${req.targetLang}. Write the questions in the target language, with instructions in ${native}. Create 18 questions: 3 per level A1, A2, B1, B2, C1, C2, ordered from easiest to hardest. "answer" is the 0-based index of the correct option.`;
-      format = betaZodOutputFormat(Placement);
+      schema = Placement;
       effort = "medium";
       break;
     case "podcast":
       system = P.PODCAST_SYSTEM;
       content = `${req.title ? `Source: ${req.title}\n` : ""}Write the episode in ${native}, 14-24 turns.\n\n<text>\n${clip(req.text, 60_000)}\n</text>`;
-      format = betaZodOutputFormat(Podcast);
+      schema = Podcast;
       effort = "medium";
       break;
   }
 
+  if (engine === "ollama") return ollamaJson(system, content, schema);
+  const format = betaZodOutputFormat(schema);
   const msg = await getClient().beta.messages.parse({
     model: MODEL,
     max_tokens: 16000,

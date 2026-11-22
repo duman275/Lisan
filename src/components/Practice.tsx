@@ -6,7 +6,7 @@ import { addXp, saveItem, uid, usePersistent, useSettings } from "../lib/store";
 import { plainText, splitSentences } from "../lib/text";
 import { narrator } from "../lib/tts";
 import { langByCode, LEVELS, type Level } from "../data/languages";
-import { useHealth, useNav, useStream } from "./common";
+import { useHealth, useLLM, useNav, useStream } from "./common";
 import { Clickable, WordPopup, type WordTarget } from "./WordPopup";
 
 // ---------- Yapay zekâ öğretmen ----------
@@ -31,7 +31,7 @@ const MODES = [
 
 export function Tutor({ lang, level }: { lang: string; level: string }) {
   const [settings] = useSettings();
-  const health = useHealth();
+  const llm = useLLM();
   const [mode, setMode] = useState(MODES[0].id);
   const [history, setHistory] = usePersistent<Msg[]>(`tutor:${lang}`, []);
   const [input, setInput] = useState("");
@@ -152,7 +152,7 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
         </select>
         <div className="row wrap">
           {canRecognize() && (
-            <button className={`btn ${handsFree ? "primary" : ""}`} onClick={toggleHandsFree} disabled={!health.ai}>
+            <button className={`btn ${handsFree ? "primary" : ""}`} onClick={toggleHandsFree} disabled={!llm}>
               {handsFree ? "⏹ Sesli sohbeti bitir" : "🎧 Eller serbest sesli sohbet"}
             </button>
           )}
@@ -166,7 +166,7 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
             <p>Hedef dilde yaz ya da 🎙 ile konuş. Öğretmen doğal yanıt verir, ardından hatalarını düzeltir ve seni tekrar konuşturur.</p>
             <div className="row wrap center-row">
               {["Hi! Can we practice small talk?", "I want to talk about my weekend.", "Help me prepare for a job interview."].map((s) => (
-                <button key={s} className="chip" onClick={() => send(s)} disabled={!health.ai}>{s}</button>
+                <button key={s} className="chip" onClick={() => send(s)} disabled={!llm}>{s}</button>
               ))}
             </div>
           </div>
@@ -193,8 +193,8 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
         {canRecognize() && (
           <button type="button" className={`icon ${rec ? "rec" : ""}`} onClick={speak} aria-label="Konuş">{rec ? "⏹" : "🎙"}</button>
         )}
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={`${langByCode(lang).label} yaz…`} disabled={!health.ai} />
-        <button className="btn primary" disabled={busy || !input.trim() || !health.ai}>Gönder</button>
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={llm ? `${langByCode(lang).label} yaz…` : "Öğretmen için Ollama (ücretsiz) veya Claude gerekir"} disabled={!llm} />
+        <button className="btn primary" disabled={busy || !input.trim() || !llm}>Gönder</button>
       </form>
     </div>
   );
@@ -203,7 +203,7 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
 // ---------- Seviyeli hikâye (anlaşılır girdi) ----------
 
 export function Story({ lang, level }: { lang: string; level: string }) {
-  const health = useHealth();
+  const llm = useLLM();
   const { go } = useNav();
   const s = useStream();
   const [topic, setTopic] = useState("");
@@ -229,12 +229,17 @@ export function Story({ lang, level }: { lang: string; level: string }) {
           </select>
           <button
             className="btn primary"
-            disabled={s.loading || !health.ai}
+            disabled={s.loading || !llm}
             onClick={() => (setTr(""), s.run({ task: "story", targetLang: langByCode(lang).name, level, topic, mode: len }).then((r) => r && addXp(10)))}
           >
             {s.loading ? "Yazılıyor…" : "✨ Hikâye yaz"}
           </button>
         </div>
+        {!llm && (
+          <p className="muted small">
+            Hikâye yazmak için dil modeli gerekir (ücretsiz Ollama ya da Claude). Ücretsiz alternatif: Efsaneler → “Çocuk & Masal Klasikleri” (Ezop, Grimm, Andersen) gerçek seviyeli okumadır; kelimelere dokunup anlamını görebilirsin.
+          </p>
+        )}
         {s.error && <div className="error">{s.error}</div>}
       </div>
       {s.text && (

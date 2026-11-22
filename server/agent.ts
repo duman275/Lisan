@@ -3,10 +3,9 @@
 // İki sağlayıcı: Claude (API anahtarı ile) veya Ollama (bilgisayarında yerel çalışan, tamamen ücretsiz model).
 import type Anthropic from "@anthropic-ai/sdk";
 import { FALLBACK_BETA, getClient, MODEL, aiAvailable } from "./ai.ts";
+import { checkOllama, OLLAMA_MODEL, OLLAMA_URL, type OllamaMessage } from "./ollama.ts";
 
 export const AGENT_MODEL = process.env.AGENT_MODEL || MODEL;
-const OLLAMA_URL = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/$/, "");
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen3:8b";
 
 export type Provider = "claude" | "ollama";
 
@@ -174,24 +173,8 @@ export const TOOLS: { name: string; description: string; input_schema: Record<st
   },
 ];
 
-export function ollamaChecked() {
-  return ollamaState;
-}
-let ollamaState = { available: false, checkedAt: 0, models: [] as string[] };
-
-export async function checkOllama(): Promise<typeof ollamaState> {
-  if (Date.now() - ollamaState.checkedAt < 30_000) return ollamaState;
-  try {
-    const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
-    const data = (await r.json()) as { models?: { name: string }[] };
-    ollamaState = { available: r.ok, checkedAt: Date.now(), models: (data.models || []).map((m) => m.name) };
-  } catch {
-    ollamaState = { available: false, checkedAt: Date.now(), models: [] };
-  }
-  return ollamaState;
-}
-
 export async function pickProvider(pref?: string): Promise<Provider | null> {
+  if (pref === "free") return null;
   const ollama = (await checkOllama()).available;
   if (pref === "ollama" && ollama) return "ollama";
   if (pref === "claude" && aiAvailable()) return "claude";
@@ -270,13 +253,6 @@ async function claudeTurn(history: AgentMsg[], state: string): Promise<AgentTurn
 }
 
 // ---------- Ollama (yerel, ücretsiz) ----------
-
-interface OllamaMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[];
-  tool_name?: string;
-}
 
 async function ollamaTurn(history: AgentMsg[], state: string): Promise<AgentTurn> {
   const messages: OllamaMessage[] = [{ role: "system", content: SYSTEM }];

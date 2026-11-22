@@ -22,20 +22,31 @@ export const useNav = () => useContext(NavContext);
 // ---------- Sunucu durumu ----------
 
 export interface Health {
-  ai: boolean;
+  ai: boolean; // içerik özellikleri çalışabilir (Claude, Ollama veya ücretsiz motor)
+  llm: boolean; // dil modeli var (Claude veya Ollama)
+  free: boolean; // ücretsiz veri motoru hazır
   checked: boolean;
   agent: { claude: boolean; ollama: boolean; ollamaModel: string; ollamaModels: string[] };
 }
-export const NO_HEALTH: Health = { ai: false, checked: false, agent: { claude: false, ollama: false, ollamaModel: "", ollamaModels: [] } };
+export const NO_HEALTH: Health = { ai: false, llm: false, free: false, checked: false, agent: { claude: false, ollama: false, ollamaModel: "", ollamaModels: [] } };
 export const HealthContext = createContext<Health>(NO_HEALTH);
 export const useHealth = () => useContext(HealthContext);
+/** Dil modeli (Claude/Ollama) kullanılabilir mi? Kullanıcı “yalnızca ücretsiz kaynaklar” seçtiyse hayır. */
+export function useLLM() {
+  const h = useContext(HealthContext);
+  const [settings] = useSettings();
+  return h.llm && settings.agentProvider !== "free";
+}
 
 export function AiNotice() {
   const h = useHealth();
-  if (!h.checked || h.ai) return null;
+  const [settings] = useSettings();
+  const freeMode = settings.agentProvider === "free" || !h.llm;
+  if (!h.checked || !freeMode) return null;
   return (
     <div className="notice">
-      Yapay zekâ özellikleri kapalı: sunucuda <code>ANTHROPIC_API_KEY</code> tanımlı değil. Kitap okuma, seslendirme, kartlar ve PDF okuma yine de çalışır.
+      <b>Ücretsiz mod.</b> İngilizce dersler, kelime kartları ve seviye testi Tatoeba'nın gerçek cümleleriyle; özet ve analizler Wikipedia'dan, API'siz hazırlanır.
+      Öğretmenle sohbet, hikâye yazma, podcast ve diğer diller için bilgisayarına <b>ücretsiz Ollama</b> kurabilirsin (Ayarlar → Yapay zekâ kaynağı).
     </div>
   );
 }

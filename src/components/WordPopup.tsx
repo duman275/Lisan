@@ -64,7 +64,7 @@ export function WordPopup({ target, onClose }: { target: WordTarget; onClose: ()
             🔊
           </button>
         </div>
-        {!health.ai && <p className="muted">Anlam için yapay zekâ gerekir (sunucu anahtarı yok).</p>}
+        {!health.ai && <p className="muted">Anlam servisine ulaşılamadı.</p>}
         {health.ai && !def && !err && (
           <p className="status">
             <span className="spinner" /> Aranıyor…
@@ -73,11 +73,15 @@ export function WordPopup({ target, onClose }: { target: WordTarget; onClose: ()
         {err && <p className="error">{err}</p>}
         {def && (
           <>
-            <p className="muted small">
-              {def.partOfSpeech} · {def.pronunciation}
-            </p>
+            {(def.partOfSpeech || def.pronunciation) && (
+              <p className="muted small">{[def.partOfSpeech, def.pronunciation].filter(Boolean).join(" · ")}</p>
+            )}
             <p>{def.meaning}</p>
-            <p className="example">{def.example}</p>
+            {def.example.split("\n").map((line, i) => (
+              <p key={i} className="example small">
+                {line}
+              </p>
+            ))}
           </>
         )}
         <button

@@ -12,12 +12,13 @@ import { langByCode, LEVELS, type Level } from "../data/languages";
 import { useHealth } from "./common";
 
 interface LessonData {
+  source?: "free";
   title: string;
   goal: string;
   explanation: string;
   vocab: { word: string; reading: string; translation: string; example: string; exampleTranslation: string }[];
   dialogue: { speaker: string; line: string; translation: string }[];
-  exercises: { kind: "mcq" | "fill" | "translate"; prompt: string; options: string[]; answer: string; explanation: string }[];
+  exercises: { kind: "mcq" | "fill" | "translate" | "order"; prompt: string; options: string[]; answer: string; explanation: string }[];
   shadowing: string[];
 }
 
@@ -35,6 +36,7 @@ export function Path({ lang, level, setLevel }: { lang: string; level: Level; se
         topic={units[open]}
         heading={`${level} · Ünite ${open + 1}`}
         doneKey={`${lang}|${level}|${open}`}
+        unitKey={`${level}:${open}`}
         cacheKey={`lesson|${lang}|${level}|${open}`}
         onBack={() => setOpen(null)}
         onNext={() => setOpen(open + 1 < units.length ? open + 1 : null)}
@@ -81,6 +83,7 @@ export function LessonView({
   doneKey,
   cacheKey,
   courseFocus,
+  unitKey,
   onBack,
   onNext,
 }: {
@@ -91,6 +94,7 @@ export function LessonView({
   doneKey: string;
   cacheKey: string;
   courseFocus?: string;
+  unitKey?: string;
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -109,8 +113,7 @@ export function LessonView({
     try {
       const cached = force ? undefined : await cacheGet<LessonData>(key);
       if (cached) return setData(cached);
-      if (!health.ai) throw new Error("Ders üretmek için yapay zekâ gerekir (sunucuda ANTHROPIC_API_KEY yok).");
-      const d = await jsonAI<LessonData>({ task: "lesson", targetLang: langByCode(lang).name, nativeLang: settings.nativeLang, level, topic, courseFocus });
+            const d = await jsonAI<LessonData>({ task: "lesson", targetLang: langByCode(lang).name, nativeLang: settings.nativeLang, level, topic, courseFocus, unitKey });
       await cacheSet(key, d);
       setData(d);
     } catch (e) {
@@ -172,7 +175,7 @@ export function LessonView({
             <Markdown text={data.explanation} />
           </section>
 
-          <Dialogue lang={lang} lines={data.dialogue} />
+          <Dialogue lang={lang} lines={data.dialogue} free={data.source === "free"} />
 
           <section className="card">
             <h3>4 · Alıştırmalar (etkin hatırlama)</h3>
@@ -192,7 +195,7 @@ export function LessonView({
   );
 }
 
-function Dialogue({ lang, lines }: { lang: string; lines: LessonData["dialogue"] }) {
+function Dialogue({ lang, lines, free }: { lang: string; lines: LessonData["dialogue"]; free?: boolean }) {
   const voices = useVoices(lang);
   const [showTr, setShowTr] = useState(false);
   const speakers = [...new Set(lines.map((l) => l.speaker))];
@@ -209,9 +212,9 @@ function Dialogue({ lang, lines }: { lang: string; lines: LessonData["dialogue"]
   return (
     <section className="card">
       <div className="row between wrap">
-        <h3>3 · Diyalog (dinle → anla)</h3>
+        <h3>{free ? "3 · Gerçek örnek cümleler (Tatoeba)" : "3 · Diyalog (dinle → anla)"}</h3>
         <div className="row">
-          <button className="btn" onClick={play}>🎧 Diyaloğu dinle</button>
+          <button className="btn" onClick={play}>{free ? "🎧 Cümleleri dinle" : "🎧 Diyaloğu dinle"}</button>
           <button className="btn ghost" onClick={() => setShowTr(!showTr)}>{showTr ? "Çeviriyi gizle" : "Çeviriyi göster"}</button>
         </div>
       </div>
@@ -238,7 +241,9 @@ function Exercise({ ex, n, lang }: { ex: LessonData["exercises"][number]; n: num
       <p>
         <b>{n}.</b> {ex.prompt}
       </p>
-      {ex.kind === "mcq" && ex.options.length ? (
+      {ex.kind === "order" ? (
+        <WordOrder ex={ex} done={checked} onDone={(good) => (setVal(good ? ex.answer : "x"), setChecked(true), good && addXp(3))} />
+      ) : ex.kind === "mcq" && ex.options.length ? (
         <div className="options">
           {ex.options.map((o) => (
             <button
@@ -275,6 +280,34 @@ function Exercise({ ex, n, lang }: { ex: LessonData["exercises"][number]; n: num
               Tekrar dene
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WordOrder({ ex, done, onDone }: { ex: LessonData["exercises"][number]; done: boolean; onDone: (good: boolean) => void }) {
+  const [picked, setPicked] = useState<number[]>([]);
+  const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}' ]/gu, "").trim();
+  const sentence = picked.map((i) => ex.options[i]).join(" ");
+  return (
+    <div className="order">
+      <div className="order-line">{sentence || <span className="muted">Kelimelere sırayla dokun…</span>}</div>
+      <div className="options">
+        {ex.options.map((w, i) => (
+          <button key={i} className="opt" disabled={done || picked.includes(i)} onClick={() => setPicked([...picked, i])}>
+            {w}
+          </button>
+        ))}
+      </div>
+      {!done && (
+        <div className="row">
+          <button className="btn ghost small" onClick={() => setPicked(picked.slice(0, -1))} disabled={!picked.length}>
+            ← Geri al
+          </button>
+          <button className="btn small" disabled={picked.length !== ex.options.length} onClick={() => onDone(norm(sentence) === norm(ex.answer))}>
+            Kontrol et
+          </button>
         </div>
       )}
     </div>
@@ -347,6 +380,7 @@ export function Courses({ lang, initial }: { lang: string; initial?: { course: s
         heading={`${course.icon} ${course.name} · Ders ${open + 1}`}
         courseFocus={course.focus}
         doneKey={`${lang}|course:${course.id}|${open}`}
+        unitKey={`course:${course.id}:${open}`}
         cacheKey={`course|${lang}|${course.id}|${open}`}
         onBack={() => setOpen(null)}
         onNext={() => setOpen(open + 1 < course.units.length ? open + 1 : null)}

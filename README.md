@@ -2,6 +2,18 @@
 
 Lisan; çok dilli bir dil öğrenme sistemi, sesli kitap/podcast okuyucu, PDF anlatıcı ve web destekli edebi analiz aracını tek uygulamada birleştirir. Arayüz Türkçedir, yapay zekâ özellikleri Claude API ile çalışır.
 
+## Ücretsiz kullanım — API anahtarı gerekmez
+
+Lisan üç kademeli çalışır ve hangisinin kullanılacağını Ayarlar → **Yapay zekâ kaynağı**'ndan seçersin:
+
+| Kademe | Ücret | Neler çalışır |
+|---|---|---|
+| **Ücretsiz kaynaklar** (kurulumsuz) | 0 ₺ | İngilizce (Türkçe açıklamalı) **112 ünitenin tamamı** (60 CEFR + 52 kurs dersi): konu anlatımı, kalıplar, gerçek örnek cümleler, boşluk doldurma, anlam seçme, çeviri, kelime sıralama, gölgeleme · sıklık sıralı **kelime desteleri** · **seviye tespit sınavı** · dokunarak **kelime anlamı** · Wikipedia'dan **kitap özeti** ve **tema/sembol bölümleri** + Reddit, Fandom, Goodreads, LitCharts, yazar söyleşisi bağlantıları · kitap okuma, sesli dinleme, PDF, sesli komutlar |
+| **Ollama** (bilgisayarında yerel model) | 0 ₺ | Yukarıdakilere ek olarak her şey, **tüm dillerde**: öğretmenle (sesli) sohbet, seviyeli hikâye, podcast'e dönüştürme, sayfayı anlatma, yorumlu özet ve Wikipedia kaynaklı analiz, akıllı asistan |
+| **Claude API** | kullandıkça | En yüksek kalite; analizde canlı web araştırması (söyleşiler, Reddit, fandom) |
+
+Ücretsiz içerik kaynakları ve lisansları: [`data/README.md`](data/README.md) — Tatoeba (126.000 gerçek İngilizce–Türkçe cümle çifti), OpenSubtitles sıklık listeleri (12 dil), Wikipedia, Project Gutenberg.
+
 ## Özellikler
 
 ### 🎓 Dil öğrenme (A1 → C2)
@@ -83,7 +95,7 @@ npm run build
 npm start                 # http://localhost:8787 (API + arayüz tek sunucuda)
 ```
 
-API anahtarı olmadan da açılır: kitap okuma, sesli dinleme, PDF, kartlar, hazır deste ve sesli komutlar çalışır; Ollama kuruluysa asistan da ücretsiz çalışır. İçerik üreten özellikler (dersler, öğretmen, hikâye, özet, analiz, podcast, kelime anlamı) Claude API anahtarı gerektirir.
+API anahtarı olmadan tamamen çalışır (yukarıdaki “Ücretsiz kullanım” tablosuna bak). Ücretsiz veriler depoyla birlikte gelir; güncellemek için `node scripts/build-data.mjs`.
 
 Sesli komut ve konuşma tanıma için Chrome veya Edge önerilir (Firefox konuşma tanımayı desteklemez).
 
@@ -103,8 +115,12 @@ lisan/
 ├── server/            Express API (Node, TypeScript)
 │   ├── ai.ts          Claude çağrıları: akışlı (SSE) görevler + yapılandırılmış JSON görevler
 │   ├── agent.ts       Yardımcı ajan: araç tanımları, Claude ve Ollama sağlayıcıları
+│   ├── free.ts        Ücretsiz motor: Tatoeba dersleri, desteler, seviye testi, sözlük, Wikipedia özet/analiz
+│   ├── freeUnits.ts   112 ünitenin anahtar kelimeleri, kalıpları ve Türkçe anlatımı
+│   ├── ollama.ts      Yerel model (akış + şemaya uygun JSON)
 │   ├── prompts.ts     Görev başına sistem istemleri
 │   └── books.ts       Project Gutenberg arama/indirme
+├── data/              Ücretsiz veri (Tatoeba, sıklık listeleri, sözlük) — scripts/build-data.mjs
 └── src/               React + Vite arayüzü
     ├── components/    Öğren, Kütüphane/Okuyucu, Efsaneler, Özet, Analiz, Ayarlar, Oynatıcı
     ├── lib/           tts (anlatıcı), srs (aralıklı tekrar), pdf, speech (konuşma tanıma), actions (asistan araçları + yerel sesli komutlar), store

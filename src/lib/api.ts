@@ -10,11 +10,15 @@ export interface StreamResult {
 }
 
 /** Sunucudaki /api/stream uç noktasından SSE akışını okur. */
+import { getSettings } from "./store";
+
+const withProvider = (body: Record<string, unknown>) => ({ provider: getSettings().agentProvider, ...body });
+
 export async function streamAI(body: Record<string, unknown>, h: StreamHandlers = {}, signal?: AbortSignal): Promise<StreamResult> {
   const res = await fetch("/api/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(withProvider(body)),
     signal,
   });
   if (!res.ok || !res.body) {
@@ -53,7 +57,7 @@ export async function jsonAI<T>(body: Record<string, unknown>): Promise<T> {
   const res = await fetch("/api/json", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(withProvider(body)),
   });
   const data = await res.json().catch(() => ({ error: `Sunucu hatası (${res.status})` }));
   if (!res.ok) throw new Error(data.error || `Sunucu hatası (${res.status})`);

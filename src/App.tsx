@@ -33,7 +33,7 @@ export default function App() {
   useEffect(() => {
     const check = () =>
       getJSON<Omit<Health, "checked">>("/api/health")
-        .then((h) => setHealth({ ai: h.ai, agent: h.agent, checked: true }))
+        .then((h) => setHealth({ ai: h.ai, llm: h.llm, free: h.free, agent: h.agent, checked: true }))
         .catch(() => setHealth({ ...NO_HEALTH, checked: true }));
     void check();
     const t = window.setInterval(check, 60_000); // Ollama sonradan açılırsa algıla
