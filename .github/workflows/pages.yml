@@ -31,6 +31,8 @@ jobs:
           restore-keys: books-
       - name: Telifsiz kitapları indir (Project Gutenberg)
         run: node scripts/fetch-books.mjs
+        timeout-minutes: 6
+        continue-on-error: true
       - name: Ücretsiz veriyi siteye kopyala
         run: mkdir -p public/data && cp data/*.gz public/data/
       - name: Derle

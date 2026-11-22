@@ -26,7 +26,14 @@ function strip(raw) {
 
 const LANG = { English: "en", German: "de", French: "fr", Spanish: "es", Italian: "it", Russian: "ru" };
 let ok = 0;
+// Engelleyen / yanıt vermeyen aynalar bir kez başarısız olunca bir daha denenmez; toplam süre sınırlı
+const badHosts = new Map();
+const deadline = Date.now() + 5 * 60_000;
 for (const b of books) {
+  if (Date.now() > deadline) {
+    console.log("Süre doldu; kalan kitaplar atlandı.");
+    break;
+  }
   const file = path.join(out, `${b.gid}.json.gz`);
   if (existsSync(file)) {
     ok++;
@@ -42,10 +49,13 @@ for (const b of books) {
   ];
   const fails = [];
   for (const u of urls) {
+    const host = new URL(u).host;
+    if ((badHosts.get(host) || 0) >= 2) continue;
     try {
-      const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; Lisan-build/1.0; +https://github.com/duman275/Lisan)" }, redirect: "follow", signal: AbortSignal.timeout(30_000) });
+      const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; Lisan-build/1.0; +https://github.com/duman275/Lisan)" }, redirect: "follow", signal: AbortSignal.timeout(10_000) });
       if (!r.ok) {
-        fails.push(`${new URL(u).host}:${r.status}`);
+        fails.push(`${host}:${r.status}`);
+        if (r.status === 403 || r.status === 429 || r.status >= 500) badHosts.set(host, (badHosts.get(host) || 0) + 1);
         continue;
       }
       const raw = await r.text();
@@ -59,7 +69,8 @@ for (const b of books) {
       console.log(`  ✓ ${b.gid} ${b.title} (${new URL(u).host})`);
       break;
     } catch (e) {
-      fails.push(`${new URL(u).host}:${e.cause?.code || e.name}`);
+      fails.push(`${host}:${e.cause?.code || e.name}`);
+      badHosts.set(host, (badHosts.get(host) || 0) + 1);
     }
   }
   if (!existsSync(file)) console.log(`  ✗ ${b.gid} ${b.title} — ${fails.join(", ")}`);
