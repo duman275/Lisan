@@ -4,7 +4,13 @@ Lisan; çok dilli bir dil öğrenme sistemi, sesli kitap/podcast okuyucu, PDF an
 
 ## 📱 Telefondan kullan
 
-**https://duman275.github.io/Lisan/** — tarayıcıda aç, menüden **“Ana ekrana ekle”** de; uygulama gibi açılır.
+**https://duman275.github.io/Lisan/**
+
+Telefona yükleme (iki yol):
+- **Android uygulaması (APK):** **https://duman275.github.io/Lisan/Lisan.apk** — indir, dosyaya dokun, “Bu kaynağa izin ver” → Yükle. Play Protect uyarısında “Yine de yükle”. (APK her derlemede yeniden imzalandığından yeniden kurarken önce eskisini kaldır; içerik güncellemeleri ise internetten kendiliğinden gelir.)
+- **Chrome'dan yükle:** siteyi Chrome uygulamasının **kendisinde** aç (başka bir uygulamanın içindeki pencerede yükleme çalışmaz) → ⋮ → “Uygulamayı yükle”.
+
+**Telefonda yapay zekâ:** Ayarlar → “Telefonda yapay zekâ” → ücretsiz Google Gemini anahtarı (aistudio.google.com/apikey). Varsayılan model `gemini-3.5-flash`; model kapalı/yoğunsa sıradaki Gemini modeline otomatik geçer. Öğretmen (sesli sohbet dahil), podcast, hikâye, sayfa anlatma, asistan ve İngilizce dışındaki dillerde dersler bununla çalışır.
 
 Telefondaki sürüm sunucusuzdur ve tamamen ücretsizdir: İngilizce dersler (112 ünite), kelime kartları, seviye testi, sözlük, Efsaneler'deki 📗 telifsiz kitapları okuma/dinleme, PDF yükleme, Wikipedia özet/analiz ve sesli komutlar çalışır. Öğretmenle sohbet, hikâye yazma ve podcast gibi dil modeli isteyen özellikler bilgisayarda (Ollama/Claude ile) çalışan sürümdedir.
 
@@ -46,7 +52,7 @@ Uygulama, etkisi en iyi kanıtlanmış yöntemleri günlük bir akışta birleş
 | Çıktı + anında düzeltme | Yapay zekâ öğretmen: serbest sohbet, rol yapma, münazara, gramer koçu, kitap kulübü |
 | Etkin hatırlama | Her ünitede çoktan seçmeli, boşluk doldurma ve çeviri alıştırmaları |
 
-Ayrıca: seviye tespit sınavı (18 soru), seviye başına 10 ünitelik müfredat (60 ünite), günlük plan, XP, seri ve haftalık grafik.
+Ayrıca: seviye tespit sınavı (18 soru), seviye başına 10 ünitelik müfredat (A1–C2 ve **Native** = ana dil seviyesi, toplam 70 ünite), günlük plan, XP, seri ve haftalık grafik.
 
 **Kurslar** (CEFR müfredatına ek, beceri odaklı):
 | Kurs | Seviye | İçerik |
@@ -93,6 +99,9 @@ PDF tarayıcıda işlenir (sunucuya yüklenmez), metni çıkarılır, kütüphan
 ### 🔎 Derin analiz: sembolizm, temalar, alt metin
 Claude önce **web'de araştırır**: yazar söyleşileri, yayımlanmış eleştiriler, film/dizi uyarlamaları, Reddit tartışmaları, fandom wiki'leri, Goodreads. Sonra metnin gösterdiklerini, yazarın söylediklerini, akademik yorumları ve hayran teorilerini **ayrı ayrı ve kaynaklarıyla** anlatır. Odak seçilebilir: semboller, temalar, alt metin, karakter psikolojisi, tarihsel bağlam, uyarlamalar, fan teorileri, anlatım tekniği…
 
+### 🎨 Görünüm
+Varsayılan “Buz ve Ateş” teması (koyu, altın vurgular, Cinzel başlıklar); Ayarlar → Görünüm'den klasik açık temaya dönülebilir. Uygulama simgesi: çapraz Valyria çeliği kılıçlar — Buz (Stark) ve Blackfyre (Targaryen) — kitaplardaki tariflere göre özgün çizim.
+
 ## Kurulum
 
 Gereksinim: Node.js 22+
@@ -137,6 +146,7 @@ lisan/
 │   ├── ollama.ts      Yerel model (akış + şemaya uygun JSON)
 │   ├── prompts.ts     Görev başına sistem istemleri
 │   └── books.ts       Project Gutenberg arama/indirme
+├── android/           Android uygulaması (Trusted Web Activity) — APK GitHub Actions'ta derlenir
 ├── data/              Ücretsiz veri (Tatoeba, sıklık listeleri, sözlük) — scripts/build-data.mjs
 └── src/               React + Vite arayüzü
     ├── components/    Öğren, Kütüphane/Okuyucu, Efsaneler, Özet, Analiz, Ayarlar, Oynatıcı
