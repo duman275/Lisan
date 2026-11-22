@@ -384,7 +384,13 @@ function MicCard() {
       <details className="small">
         <summary>İzin penceresi çıkmıyorsa</summary>
         <ol>
-          <li>Telefonda <b>Ayarlar → Uygulamalar → Chrome → İzinler → Mikrofon</b> → “Uygulama kullanılırken izin ver”.</li>
+          <li>
+            Lisan Chrome üzerinden çalışır: izin <b>Chrome'a</b> verilir, Lisan'ın kendi izin sayfası boş görünür (bu normal). Telefonda{" "}
+            <b>Ayarlar → Uygulamalar → Chrome → İzinler → Mikrofon</b> → “Uygulama kullanılırken izin ver”.
+          </li>
+          <li>
+            Samsung: hızlı panelde ya da <b>Ayarlar → Güvenlik ve gizlilik → Gizlilik → Mikrofon erişimi</b> açık olsun.
+          </li>
           <li>
             Chrome'da <b>⋮ → Ayarlar → Site ayarları → Mikrofon</b> → <i>duman275.github.io</i> “Engellendi” listesindeyse dokunup <b>İzin ver</b> seç.
           </li>

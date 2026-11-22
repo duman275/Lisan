@@ -57,7 +57,7 @@ export async function requestMic(): Promise<boolean> {
 }
 
 export const MIC_HELP =
-  "Mikrofon izni kapalı. Açmak için: Chrome'da adres çubuğundaki simgeye (ya da ⋮ → ⓘ) dokun → İzinler/Site ayarları → Mikrofon → İzin ver. Uygulama (APK) kullanıyorsan ayrıca Android Ayarlar → Uygulamalar → Chrome → İzinler → Mikrofon → “Uygulama kullanılırken izin ver”.";
+  "Mikrofon izni kapalı. Lisan, Chrome üzerinden çalıştığı için izin Chrome'a verilir (Lisan'ın kendi izin sayfası boş görünür, bu normal): 1) Android Ayarlar → Uygulamalar → Chrome → İzinler → Mikrofon → “Uygulama kullanılırken izin ver”. 2) Samsung'da hızlı panelde ya da Ayarlar → Güvenlik ve gizlilik → Gizlilik → “Mikrofon erişimi” açık olsun. 3) Chrome → ⋮ → Ayarlar → Site ayarları → Mikrofon → duman275.github.io “İzin ver”. Sonra Lisan'ı kapatıp aç.";
 
 const SR_ERRORS: Record<string, string> = {
   "not-allowed": MIC_HELP,
