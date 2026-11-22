@@ -86,7 +86,7 @@ export const DEFAULT_SETTINGS: Settings = {
   agentSpeak: true,
   llmProvider: "gemini",
   llmBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-  llmModel: "gemini-2.5-flash",
+  llmModel: "gemini-3.5-flash",
   llmKey: "",
 };
 

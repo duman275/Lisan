@@ -65,12 +65,16 @@ function htmlToText(html) {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|h[1-6]|li|dd|blockquote)>/gi, "\n\n")
     .replace(/<[^>]+>/g, "")
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\u00ad/g, "") // yumuşak tire (heceleme işareti)
+    .replace(/[\u00a0\u2000-\u200b\u3000]/g, " ")
+    .replace(/^.*kardeş projeler:.*$/gim, "")
     .replace(/\[\d+\]/g, "")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")
@@ -93,7 +97,9 @@ async function findTitle(name, author) {
   return hit?.title || null;
 }
 
-const index = existsSync(path.join(out, "tr-index.json")) ? JSON.parse(readFileSync(path.join(out, "tr-index.json"), "utf8")) : [];
+// Temizleme kuralları değişince önbellekteki eski dosyalar yeniden indirilir
+const VERSION = 2;
+const index = (existsSync(path.join(out, "tr-index.json")) ? JSON.parse(readFileSync(path.join(out, "tr-index.json"), "utf8")) : []).filter((b) => b.v === VERSION);
 const have = new Set(index.map((b) => b.id));
 for (const [name, author] of CANDIDATES) {
   const id = `tr-${slug(name)}`;
@@ -124,7 +130,7 @@ for (const [name, author] of CANDIDATES) {
       continue;
     }
     writeFileSync(path.join(out, `${id}.json.gz`), gzipSync(JSON.stringify({ title: name, author, lang: "tr", text })));
-    index.push({ id, title: name, author, chars: text.length, source: `https://tr.wikisource.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}` });
+    index.push({ v: VERSION, id, title: name, author, chars: text.length, source: `https://tr.wikisource.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}` });
     have.add(id);
     console.log(`  ✓ ${name} — ${author} (${Math.round(text.length / 1000)}K karakter, ${subs.length} bölüm)`);
   } catch (e) {

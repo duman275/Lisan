@@ -19,7 +19,7 @@ export const LLM_PRESETS: LlmPreset[] = [
     id: "gemini",
     name: "Google Gemini (ücretsiz katman)",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     keyUrl: "https://aistudio.google.com/apikey",
     note: "Google hesabıyla kredi kartısız ücretsiz anahtar. Türkçesi çok iyi; önerilen.",
   },
@@ -65,20 +65,28 @@ type ChatMessage =
   | { role: "assistant"; content: string | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
+// Gemini'de model kapatılırsa ya da yoğunsa sırayla denenecek modeller
+const GEMINI_FALLBACKS = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"];
+
 async function post(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
   const cfg = llmConfig();
   if (!cfg) throw new Error("Yapay zekâ anahtarı girilmemiş (Ayarlar → Telefonda yapay zekâ).");
-  let r: Response;
-  try {
-    r = await fetch(`${cfg.baseUrl}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.key}` },
-      body: JSON.stringify({ model: cfg.model, ...body }),
-      signal,
-    });
-  } catch (e) {
-    if ((e as Error).name === "AbortError") throw e;
-    throw new Error("Yapay zekâ servisine bağlanılamadı (internet bağlantısını ve servis adresini kontrol edin).");
+  const models = cfg.baseUrl.includes("generativelanguage.googleapis.com") ? [cfg.model, ...GEMINI_FALLBACKS.filter((m) => m !== cfg.model)] : [cfg.model];
+  let r!: Response;
+  for (let k = 0; k < models.length; k++) {
+    try {
+      r = await fetch(`${cfg.baseUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.key}` },
+        body: JSON.stringify({ ...body, model: models[k] }),
+        signal,
+      });
+    } catch (e) {
+      if ((e as Error).name === "AbortError") throw e;
+      throw new Error("Yapay zekâ servisine bağlanılamadı (internet bağlantısını ve servis adresini kontrol edin).");
+    }
+    // 404: model kaldırılmış, 503: aşırı yoğun, 429: modelin ücretsiz sınırı doldu → sıradaki model
+    if (r.ok || ![404, 429, 503].includes(r.status) || k === models.length - 1) break;
   }
   if (!r.ok) {
     const t = await r.text();
@@ -187,12 +195,15 @@ export type AgentMsg =
   | { role: "assistant"; text: string; calls: ToolCall[]; raw?: unknown; provider?: string }
   | { role: "tool"; results: { id: string; name: string; output: string; isError?: boolean }[] };
 
-export async function llmAgentTurn(history: AgentMsg[], state: string): Promise<{ text: string; calls: ToolCall[]; provider: string }> {
+export async function llmAgentTurn(history: AgentMsg[], state: string): Promise<{ text: string; calls: ToolCall[]; provider: string; raw?: unknown }> {
   const messages: ChatMessage[] = [{ role: "system", content: AGENT_SYSTEM }];
   history.forEach((m, i) => {
     if (m.role === "user") {
       const isLastUser = !history.slice(i + 1).some((x) => x.role === "user");
       messages.push({ role: "user", content: isLastUser ? `${m.text}\n\n<app_state>${state}</app_state>` : m.text });
+    } else if (m.role === "assistant" && m.provider === "browser" && m.raw) {
+      // Servisin döndürdüğü mesaj olduğu gibi geri gönderilir (Gemini araç çağrılarındaki thought_signature dahil)
+      messages.push(m.raw as ChatMessage);
     } else if (m.role === "assistant") {
       messages.push({
         role: "assistant",
@@ -210,6 +221,8 @@ export async function llmAgentTurn(history: AgentMsg[], state: string): Promise<
   };
   const msg = data.choices?.[0]?.message;
   const known = new Set(TOOLS.map((t) => t.name));
+  // Kimliği olmayan çağrılara kimlik ver (ham mesajda da aynı kimlik kalsın)
+  (msg?.tool_calls || []).forEach((c, i) => (c.id ||= `call_${Date.now().toString(36)}_${i}`));
   const calls: ToolCall[] = (msg?.tool_calls || [])
     .filter((c) => known.has(c.function.name))
     .map((c, i) => {
@@ -221,7 +234,8 @@ export async function llmAgentTurn(history: AgentMsg[], state: string): Promise<
       }
       return { id: c.id || `call_${Date.now().toString(36)}_${i}`, name: c.function.name, input };
     });
-  return { text: (msg?.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim(), calls, provider: "browser" };
+  const raw = msg ? { role: "assistant", ...msg } : undefined;
+  return { text: (msg?.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim(), calls, provider: "browser", raw };
 }
 
 /** Anahtarı dener: kısa bir istek gönderir. */
