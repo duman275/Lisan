@@ -21,8 +21,16 @@ Site, `main` dalına her gönderimde GitHub Actions ile otomatik derlenir (`.git
 - **Kadın / Erkek** seçimi okuyucuda ve Ayarlar'da; podcast'te sunucu A kadın, B erkek sesidir.
 - **Türkçe tam kitaplar:** telif süresi dolmuş Türk klasikleri Vikikaynak'tan (Efsaneler → Türk Edebiyatı → “Türkçe tam metin”).
 
-### 🐺🐉 Buz ve Ateşin Şarkısı evreni
-Efsaneler sekmesinde: 5 kitap, Kış Rüzgârları'nın açıklanan bölümleri, yan kitaplar (Ateş ve Kan, Dunk ve Egg…), diziler, yazar söyleşileri, semboller, temalar ve teoriler. Her konudan A Wiki of Ice and Fire, Fandom, r/asoiaf, So Spake Martin ve YouTube kanallarına (Geek Teori, Karakare, Legendarium Türkiye, 40ip, Argümento, Umur Tezer, Alt Shift X, History of Westeros…) bağlantılar ve bu kaynakları kullanan derin analiz.
+### 🌌 Evrenler: Buz ve Ateşin Şarkısı, Orta Dünya, Dune
+Efsaneler sekmesinde her evren ayrı bir sayfadır; her konuda “Derin analiz (kaynaklı)”, wiki/fandom/Reddit bağlantıları ve YouTube kanalları (Geek Teori, Karakare, Legendarium Türkiye, 40ip, Argümento, Umur Tezer ve evrene özel İngilizce kanallar) bulunur.
+
+| Evren | İçerik |
+|---|---|
+| 🐺🐉 Buz ve Ateşin Şarkısı | 5 kitap, Kış Rüzgârları bölümleri, **Buz ve Ateş Dünyası** (Üstat Yandel, Şafak Çağı, Uzun Gece, Valyria, Targaryen kralları, bölgeler, Essos), **Yedi Krallığın Şövalyesi** (Dunk ve Egg'in 3 novellası, ana seriyle bağlar, HBO dizisi), yan kitaplar, diziler, semboller, temalar, teoriler, söyleşiler |
+| 💍🌋 Orta Dünya | **Hobbit** (1951 düzeltmesi, ejderha hastalığı, uyarlamalar), **Yüzüklerin Efendisi** ve Ekler, **Silmarillion** bölüm bölüm (Ainulindalë'den Akallabêth'e), Bitmemiş Öyküler, Húrin'in Çocukları ve diğerleri, Jackson filmleri, animasyonlar, Güç Yüzükleri, semboller, temalar, teoriler (Bombadil, kartallar, Balrog kanatları…), Tolkien'in mektupları |
+| 🏜️🪱 Dune | Frank Herbert'in 6 kitabı, Brian Herbert & K. J. Anderson devam/öncülleri, Lynch ve Villeneuve filmleri, Dune: Prophecy, semboller (baharat, solucanlar, su), temalar (kurtarıcı uyarısı, ekoloji, Butlerian Cihadı), teoriler, Herbert söyleşileri |
+
+Analizde Claude web'de arar; Gemini/Ollama ise Wikipedia ile evrenin wiki'sinden (AWOIAF, Tolkien Gateway, Dune Wiki, Fandom) sayfaları bağlam olarak alır.
 
 ## Ücretsiz kullanım — API anahtarı gerekmez
 

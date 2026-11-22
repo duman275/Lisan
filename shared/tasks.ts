@@ -92,7 +92,7 @@ export function buildStreamPrompt(req: StreamRequest): {
           {
             role: "user",
             content: `Analyze "${req.title}"${req.author ? ` by ${req.author}` : ""}${req.topic ? `, specifically this topic: ${req.topic}` : ""}. Focus on: ${focus}.${
-              req.sourceHints?.length ? `\n\nPrefer and cite these sources where relevant: ${req.sourceHints.join("; ")}.` : ""
+              req.sourceHints?.length ? `\n\nPrefer and cite these sources where relevant: ${req.sourceHints.filter((x) => !x.startsWith("mw:")).join("; ")}.` : ""
             }${
               req.text ? `\n\nPassage from the book to anchor the analysis:\n<passage>\n${clip(req.text, 40_000)}\n</passage>` : ""
             }\n\nWrite the analysis in ${native}.`,

@@ -5,12 +5,14 @@ import { CATALOG, type CatalogBook } from "../data/catalog";
 import { AiNotice, AiOutput, useHealth, useNav, useStream } from "./common";
 import { openBundled, openGutenberg } from "./Library";
 import { Universe } from "./Universe";
+import { UNIVERSES, universeById } from "../data/universes";
 
 // ---------- Efsane kitaplar kataloğu ----------
 
 export function Catalog() {
   const { go, route } = useNav();
-  if (route.universe === "asoiaf") return <Universe onBack={() => go({ tab: "catalog" })} />;
+  const u = universeById(route.universe);
+  if (u) return <Universe u={u} onBack={() => go({ tab: "catalog" })} />;
   return <CatalogList />;
 }
 
@@ -72,17 +74,16 @@ function CatalogList() {
         <p className="muted">Türlerin zirvesindeki kitaplar. 📗 işaretliler telifsizdir: uygulamada tam metin okunur ve sesli dinlenir. Hepsi için özet, sesli özet ve derin analiz alabilirsin.</p>
         <input placeholder="Katalogda ara: kitap ya da yazar…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      {!q && (
-        <button className="card universe-card" onClick={() => go({ tab: "catalog", universe: "asoiaf" })}>
-          <span className="big-icon">🐺🐉</span>
-          <span>
-            <strong>Buz ve Ateşin Şarkısı Evreni</strong>
-            <span className="muted small">
-              5 kitap, Kış Rüzgârları bölümleri, yan kitaplar, diziler, yazar söyleşileri, semboller, temalar, teoriler ve YouTube kanalları
+      {!q &&
+        UNIVERSES.map((uv) => (
+          <button key={uv.id} className="card universe-card" onClick={() => go({ tab: "catalog", universe: uv.id })}>
+            <span className="big-icon">{uv.icon}</span>
+            <span>
+              <strong>{uv.title}</strong>
+              <span className="muted small">{uv.cardNote}</span>
             </span>
-          </span>
-        </button>
-      )}
+          </button>
+        ))}
       {!q && (
         <div className="cats">
           {CATALOG.map((c) => (

@@ -1,21 +1,7 @@
 // Buz ve Ateşin Şarkısı (A Song of Ice and Fire) evreni: kitaplar, yan eserler, uyarlamalar, semboller, temalar, teoriler ve topluluk kaynakları.
 // Metinler bu uygulama için yazılmış kısa tanıtımlardır; ayrıntılı ve kaynaklı inceleme için “Derin analiz” kullanılır.
 
-export interface UBook {
-  title: string;
-  tr: string;
-  year: string;
-  note: string;
-}
-
-export interface UTopic {
-  id: string;
-  title: string;
-  en: string; // aramalarda kullanılacak İngilizce terim
-  text: string;
-  spoiler?: boolean;
-  status?: string; // teoriler için: doğrulandı / açık / tartışmalı
-}
+import { reddit, fandom, siteSearch, TR_CHANNELS, type UBook, type UniverseData, type UTopic } from "./types";
 
 export const AUTHOR = "George R. R. Martin";
 
@@ -95,33 +81,85 @@ export const THEORIES: UTopic[] = [
   { id: "euron", title: "Euron'un planı", en: "Euron Greyjoy plan theory Winds of Winter", status: "Açık", text: "Euron'un ejderha borusu, büyü ve tanrısallık hevesleri; Kış Rüzgârları'nda büyük kötü olacağı düşünülür.", spoiler: true },
 ];
 
-export const WIKIS = [
-  { name: "A Wiki of Ice and Fire", url: (q: string) => `https://awoiaf.westeros.org/index.php?search=${encodeURIComponent(q)}` },
-  { name: "Game of Thrones Fandom Wiki", url: (q: string) => `https://gameofthrones.fandom.com/wiki/Special:Search?query=${encodeURIComponent(q)}` },
-  { name: "Reddit r/asoiaf", url: (q: string) => `https://www.reddit.com/r/asoiaf/search/?q=${encodeURIComponent(q)}` },
-  { name: "So Spake Martin (yazar söyleşileri arşivi)", url: (q: string) => `https://www.google.com/search?q=${encodeURIComponent(`site:westeros.org "So Spake Martin" ${q}`)}` },
-  { name: "Not a Blog (G.R.R. Martin)", url: (q: string) => `https://www.google.com/search?q=${encodeURIComponent(`site:georgerrmartin.com ${q}`)}` },
-];
-
-// Kullanıcının önerdiği Türkçe kanallar + bilinen İngilizce teori kanalları
-export const CHANNELS = [
-  { name: "Geek Teori", lang: "tr" },
-  { name: "Karakare", lang: "tr" },
-  { name: "Legendarium Türkiye", lang: "tr" },
-  { name: "40ip", lang: "tr" },
-  { name: "Argümento", lang: "tr" },
-  { name: "Umur Tezer", lang: "tr" },
-  { name: "Alt Shift X", lang: "en" },
-  { name: "History of Westeros", lang: "en" },
-  { name: "Preston Jacobs", lang: "en" },
-];
-
-export const ytSearch = (channel: string, topicTr: string, topicEn: string) =>
-  `https://www.youtube.com/results?search_query=${encodeURIComponent(`${channel} ${CHANNELS.find((c) => c.name === channel)?.lang === "tr" ? topicTr : topicEn}`)}`;
-
 export const INTERVIEW_TOPICS: UTopic[] = [
   { id: "int-gardener", title: "Mimar ve bahçıvan", en: "George R R Martin architect gardener interview", text: "Martin kendini planı önceden çizen bir “mimar” değil, hikâyesini büyürken keşfeden bir “bahçıvan” olarak tanımlar; bu, kitaplar arasındaki uzun aralıkların ve dallanan yapının bir açıklaması olarak sık anılır." },
   { id: "int-tolkien", title: "Tolkien ve tarihsel ilhamlar", en: "George R R Martin Tolkien War of the Roses interview", text: "Söyleşilerinde Tolkien'e duyduğu hayranlığı ve Güller Savaşı gibi gerçek tarihsel olaylardan aldığı ilhamı anlatır." },
   { id: "int-winds", title: "Kış Rüzgârları ne zaman?", en: "George R R Martin Winds of Winter update", text: "Yazarın blogunda ve söyleşilerinde kitabın ilerleyişi hakkında verdiği güncellemeler." },
   { id: "int-show", title: "Dizi ile kitapların farkı", en: "George R R Martin books vs show ending interview", text: "Martin, kitapların sonunun diziden farklı ayrıntılar ve karakterler içereceğini söylemiştir." },
 ];
+
+// ---------- Buz ve Ateş Dünyası (The World of Ice & Fire, 2014) ----------
+export const TWOIAF: UTopic[] = [
+  { id: "twoiaf-book", title: "Kitap: Buz ve Ateş Dünyası", en: "The World of Ice and Fire book Maester Yandel", text: "George R. R. Martin, Elio M. García Jr. ve Linda Antonsson'un 2014'te yayımladığı resimli tarih kitabı. Kitap, evrenin içinden bir yazar olan Üstat Yandel'in Kral Tommen'e sunduğu bir tarih çalışması olarak kurgulanmıştır." },
+  { id: "twoiaf-yandel", title: "Güvenilmez tarihçi: Üstat Yandel", en: "Maester Yandel unreliable narrator", text: "Yandel, Lannister ve Baratheon hükümdarlığı altında yazdığı için bazı olayları yumuşatır, bazı söylentileri ise “kesin olmayan” diye aktarır. Okurlar, satır aralarındaki bu taraflılıktan pek çok teori çıkarır." },
+  { id: "twoiaf-dawn", title: "Antik Tarih: Şafak Çağı ve İlk İnsanlar", en: "Dawn Age First Men Children of the Forest", text: "Orman Çocukları'nın Westeros'taki ilk çağı, İlk İnsanlar'ın Essos'tan gelişi, iki halk arasındaki savaşlar ve sonunda İsle of Faces'te yapılan Antlaşma." },
+  { id: "twoiaf-night", title: "Uzun Gece ve Sur'un inşası", en: "Long Night Night's King Wall Brandon the Builder", text: "Bir nesil süren kış, Ötekiler'in gelişi, Şafak Savaşı ve efsaneye göre İnşaatçı Bran'in Sur'u yükseltmesi. Gece Kralı efsanesi de bu döneme bağlanır.", spoiler: false },
+  { id: "twoiaf-andals", title: "Andalların gelişi ve Yedi'ye inanç", en: "Andal invasion Faith of the Seven", text: "Andalların Westeros'a gelişi, demir silahlar, Yedi inancının yayılması ve İlk İnsanlar'ın krallıklarının çoğunun düşüşü (Kuzey hariç)." },
+  { id: "twoiaf-valyria", title: "Valyria'nın yükselişi ve Felaket", en: "Valyrian Freehold Doom of Valyria", text: "Ejderha efendilerinin Özgür Valyria'sı, Ghis ile savaşlar, Valyria çeliği ve büyüsü; sonra adını bile bilmediğimiz bir felaketle tek günde yok oluşu. Felaket'in nedeni hâlâ büyük bir gizemdir." },
+  { id: "twoiaf-conquest", title: "Aegon'un Fethi", en: "Aegon's Conquest Field of Fire Harrenhal", text: "Fatih Aegon ve kız kardeşleri Visenya ile Rhaenys'in üç ejderhayla Yedi Krallık'ı birleştirmesi: Harrenhal'in yakılışı, Ateş Tarlası ve Dorne'un direnişi." },
+  { id: "twoiaf-kings", title: "Targaryen kralları", en: "Targaryen kings history", text: "Aegon I'den Deli Kral Aerys II'ye: Maegor'un zulmü, Jaehaerys'in uzun barışı, Ejderhaların Dansı, ejderhaların sonu, Blackfyre isyanları ve Summerhall trajedisi." },
+  { id: "twoiaf-regions", title: "Yedi Krallık bölge bölge", en: "Seven Kingdoms regions North Vale Riverlands Iron Islands Westerlands Reach Stormlands Dorne", text: "Kuzey, Vadi, Nehir Toprakları, Demir Adalar, Batı Toprakları, Erişim, Fırtına Toprakları ve Dorne: her bölgenin kuruluş efsanesi, büyük haneleri, gelenekleri ve kaleleri." },
+  { id: "twoiaf-beyond", title: "Denizlerin ötesi: Essos, Asshai, Sothoryos", en: "Free Cities Essos Asshai Sothoryos Ulthos", text: "Özgür Şehirler, Dothraki Denizi, Yi Ti, Gölge kıyısındaki Asshai ve keşfedilmemiş Sothoryos ile Ulthos: ana hikâyenin dışında kalan dünyanın ipuçları." },
+];
+
+// ---------- Yedi Krallığın Şövalyesi (Dunk ve Egg) ----------
+export const AKOTSK: UTopic[] = [
+  { id: "dunk-egg", title: "Dunk ve Egg kimdir?", en: "Dunk and Egg Ser Duncan the Tall Aegon V", text: "Ana hikâyeden yaklaşık 90 yıl önce, gezgin bir şövalye olan iri yarı Ser Duncan (Dunk) ile tıraşlı kafalı yaveri Egg'in maceraları. Egg'in gerçek kimliği ilk novellada ortaya çıkar.", spoiler: false },
+  { id: "hedge-knight", title: "The Hedge Knight — Gezgin Şövalye (1998)", en: "The Hedge Knight Ashford tourney trial of seven", text: "Ustası Ser Arlan'ın ölümünden sonra kendini şövalye ilan eden Dunk, Ashford turnuvasına katılır; bir Targaryen prensine karşı çıkınca “yedilerin düellosu”na sürüklenir. Bedeli ağır olacaktır.", spoiler: true },
+  { id: "sworn-sword", title: "The Sworn Sword — Yeminli Kılıç (2003)", en: "The Sworn Sword Standfast Red Widow drought", text: "Kuraklık zamanında yaşlı Ser Eustace Osgrey'in hizmetindeki Dunk ve Egg, su yüzünden “Kızıl Dul” Leydi Rohanne Webber ile çıkan anlaşmazlığın ortasında kalır. Blackfyre İsyanı'nın gölgesi hâlâ taze." },
+  { id: "mystery-knight", title: "The Mystery Knight — Gizemli Şövalye (2010)", en: "The Mystery Knight Whitewalls Blackfyre plot Bloodraven", text: "Beyazduvarlar'daki düğün turnuvası, ödül olarak bir ejderha yumurtası ve arka planda yeni bir Blackfyre komplosu. Kral'ın Eli Bloodraven'ın gizli ağı da sahnededir.", spoiler: true },
+  { id: "akotsk-links", title: "Ana seriyle bağlantılar", en: "Dunk and Egg connections Summerhall Maester Aemon Brienne", text: "Egg'in kardeşi Aemon, Gece Nöbeti'nin yaşlı üstadıdır; Summerhall felaketi ve Ser Duncan'ın kaderi ana seride anılır. Okurlar ayrıca Brienne'in Dunk'ın soyundan gelebileceğini düşünür (teori).", spoiler: true },
+  { id: "akotsk-future", title: "Gelecek novellalar", en: "Dunk and Egg future novellas She-Wolves of Winterfell", text: "Martin, Dunk ve Egg'in hikâyesini Summerhall'a kadar götürecek yeni novellalar planladığını söylemiştir; çalışma başlıklarından biri “The She-Wolves of Winterfell”dir." },
+  { id: "akotsk-show", title: "HBO dizisi (2026)", en: "A Knight of the Seven Kingdoms HBO series 2026", text: "İlk novella The Hedge Knight'tan uyarlanan dizi 2026'da yayımlandı; Dunk'ı Peter Claffey, Egg'i Dexter Sol Ansell canlandırır. Ana seriden daha küçük ölçekli, daha sıcak bir ton taşır." },
+  { id: "akotsk-themes", title: "Temalar: gerçek şövalyelik", en: "Dunk and Egg themes true knighthood", text: "Şövalyeliğin unvanla değil davranışla kazanıldığı fikri; soylular ile sıradan insanlar arasındaki uçurum ve gücün sorumluluğu. Egg'in gelecekteki kral oluşu bu dersleri anlamlı kılar." },
+];
+
+export const ASOIAF: UniverseData = {
+  id: "asoiaf",
+  title: "Buz ve Ateşin Şarkısı Evreni",
+  icon: "🐺🐉",
+  author: AUTHOR,
+  analysisTitle: "A Song of Ice and Fire",
+  intro:
+    "George R. R. Martin'in A Song of Ice and Fire serisi: yayınlanan 5 kitap, Kış Rüzgârları'nın açıklanan bölümleri, Buz ve Ateş Dünyası, Yedi Krallığın Şövalyesi, Ateş ve Kan, diziler, yazar söyleşileri, semboller, temalar ve teoriler.",
+  copyrightNote: "Kitaplar telifli olduğundan tam metinleri uygulamada yok; buradaki metinler kısa tanıtımlardır.",
+  cardNote: "5 kitap, Kış Rüzgârları, Buz ve Ateş Dünyası, Dunk ve Egg, diziler, teoriler, semboller",
+  sections: [
+    { id: "books", label: "📚 5 kitap", kind: "books", groups: [{ books: MAIN_BOOKS }] },
+    { id: "twow", label: "❄️ Kış Rüzgârları", kind: "topics", intro: "The Winds of Winter (Kış Rüzgârları) henüz yayınlanmadı. Aşağıdakiler yazarın sitesinde yayımlanan ya da etkinliklerde okunan örnek bölümlerdir (ayrıntılar için A Wiki of Ice and Fire'daki “The Winds of Winter” sayfasına bak).", items: TWOW_CHAPTERS },
+    { id: "twoiaf", label: "🌍 Buz ve Ateş Dünyası", kind: "topics", intro: "The World of Ice & Fire (2014): Westeros ve ötesinin resimli tarihi.", items: TWOIAF },
+    { id: "akotsk", label: "🛡️ Yedi Krallığın Şövalyesi", kind: "topics", intro: "A Knight of the Seven Kingdoms: Dunk ve Egg novellaları ve HBO dizisi.", items: AKOTSK },
+    { id: "side", label: "📜 Yan kitaplar & diziler", kind: "books", groups: [{ title: "Yan kitaplar", books: SIDE_BOOKS }, { title: "Diziler", books: ADAPTATIONS }] },
+    { id: "symbols", label: "🐺 Semboller", kind: "topics", items: SYMBOLS },
+    { id: "themes", label: "🎭 Temalar", kind: "topics", items: THEMES },
+    { id: "theories", label: "🔮 Teoriler", kind: "topics", items: THEORIES },
+    { id: "interviews", label: "🎙 Yazar söyleşileri", kind: "topics", items: INTERVIEW_TOPICS },
+  ],
+  wikis: [
+    { name: "A Wiki of Ice and Fire", url: (q) => `https://awoiaf.westeros.org/index.php?search=${encodeURIComponent(q)}` },
+    fandom("Game of Thrones Fandom Wiki", "gameofthrones.fandom.com"),
+    reddit("asoiaf"),
+    reddit("HouseOfTheDragon"),
+    siteSearch("So Spake Martin (yazar söyleşileri)", "westeros.org", '"So Spake Martin"'),
+    siteSearch("Not a Blog (G.R.R. Martin)", "georgerrmartin.com"),
+  ],
+  channels: [...TR_CHANNELS, { name: "Alt Shift X", lang: "en" }, { name: "History of Westeros", lang: "en" }, { name: "Preston Jacobs", lang: "en" }],
+  homepages: [
+    { name: "A Wiki of Ice and Fire", url: "https://awoiaf.westeros.org", note: "kitap odaklı, bölüm bölüm kaynaklı ansiklopedi" },
+    { name: "Game of Thrones Fandom Wiki", url: "https://gameofthrones.fandom.com", note: "dizi ve kitaplar" },
+    { name: "r/asoiaf", url: "https://www.reddit.com/r/asoiaf/", note: "teoriler ve tartışmalar" },
+    { name: "So Spake Martin", url: "https://www.westeros.org/Citadel/SSM/", note: "yazarın söyleşi ve yanıtları arşivi" },
+    { name: "Not a Blog", url: "https://georgerrmartin.com/notablog/", note: "G.R.R. Martin'in kendi blogu" },
+  ],
+  hints: [
+    "the five published novels and the released The Winds of Winter sample chapters",
+    "Fire & Blood, The World of Ice & Fire (Maester Yandel's in-world history), the Dunk and Egg novellas (A Knight of the Seven Kingdoms)",
+    "George R. R. Martin's interviews (So Spake Martin archive at westeros.org, his Not a Blog)",
+    "A Wiki of Ice and Fire (awoiaf.westeros.org) and the Game of Thrones Fandom wiki",
+    "Reddit r/asoiaf discussions and fan theories",
+    "the HBO series Game of Thrones, House of the Dragon and A Knight of the Seven Kingdoms (clearly separating show-only events from the books)",
+    "YouTube analysis channels: Alt Shift X, History of Westeros, Preston Jacobs, and Turkish channels Geek Teori, Karakare, Legendarium Türkiye, 40ip, Argümento, Umur Tezer — mention a specific video only if you actually found it, never invent titles",
+    "mw:https://awoiaf.westeros.org/api.php|https://awoiaf.westeros.org/index.php/|AWOIAF",
+    "mw:https://gameofthrones.fandom.com/api.php|https://gameofthrones.fandom.com/wiki/|GoT Fandom",
+  ],
+};

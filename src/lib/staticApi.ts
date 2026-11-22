@@ -1,6 +1,6 @@
 // Sunucusuz (statik) mod: GitHub Pages gibi yerlerde, telefondan doğrudan çalışır.
 // Ücretsiz motor tarayıcıda çalışır; veriler sitenin data/ ve books/ klasörlerinden okunur.
-import { communityLinks, researchPages, freeJsonTask, freeReady, initFreeData, NEEDS_LLM, wikiText } from "../../shared/freeCore";
+import { communityLinks, researchPages, withDeadline, freeJsonTask, freeReady, initFreeData, NEEDS_LLM, wikiText } from "../../shared/freeCore";
 import { buildJsonPrompt, buildStreamPrompt, type JsonRequest, type StreamRequest } from "../../shared/tasks";
 import { browserLlmReady, llmJson, llmStream } from "./browserLLM";
 import { getSettings } from "./store";
@@ -72,7 +72,7 @@ export async function staticStream(
     let extra = "";
     if (webResearch && body.title) {
       h.onStatus?.("Wikipedia'dan kaynak toplanıyor…");
-      const pages = await researchPages(body.title as string, body.author as string | undefined, body.topic as string | undefined, body.sourceHints as string[] | undefined).catch(() => []);
+      const pages = await withDeadline(researchPages(body.title as string, body.author as string | undefined, body.topic as string | undefined, body.sourceHints as string[] | undefined), 10_000, []);
       for (const pg of pages) sources.push({ url: pg.url, title: `${pg.lang.length === 2 ? `Wikipedia (${pg.lang.toUpperCase()})` : pg.lang}: ${pg.title}` });
       sources.push(...communityLinks(body.title as string, body.author as string | undefined));
       sources.forEach((s) => h.onSource?.(s));

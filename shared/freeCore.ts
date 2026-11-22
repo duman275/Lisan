@@ -322,21 +322,22 @@ async function wikiPage(lang: string, title: string): Promise<WikiPage | null> {
 }
 
 export async function findBookPages(title: string, author?: string): Promise<WikiPage[]> {
-  const out: WikiPage[] = [];
-  for (const [lang, hint] of [
-    ["tr", "roman kitap"],
-    ["en", "novel book"],
-  ] as const) {
+  // Türkçe ve İngilizce Wikipedia aynı anda aranır
+  const one = async (lang: string, hint: string) => {
     try {
       const t = (await wikiFind(lang, `${title} ${author || ""} ${hint}`.trim())) || (await wikiFind(lang, title));
-      if (!t) continue;
-      const p = await wikiPage(lang, t);
-      if (p) out.push(p);
+      return t ? await wikiPage(lang, t) : null;
     } catch {
-      /* ağ hatası: diğer dili dene */
+      return null;
     }
-  }
-  return out;
+  };
+  const res = await Promise.all([one("tr", "roman kitap"), one("en", "novel book")]);
+  return res.filter((x): x is WikiPage => Boolean(x));
+}
+
+/** Kaynak toplamayı süreyle sınırlar: yetişmeyen kaynak atlanır. */
+export function withDeadline<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
 }
 
 /** Herhangi bir MediaWiki sitesinde (AWOIAF, Fandom) arayıp sayfa metnini getirir (parse API, HTML → metin). */
@@ -385,10 +386,12 @@ export async function mediaWikiPage(apiBase: string, siteBase: string, label: st
 /** Analiz için kaynak sayfaları: Wikipedia + (ipuçlarında geçiyorsa) ASOIAF wikileri. */
 export async function researchPages(title: string, author?: string, topic?: string, hints?: string[]): Promise<WikiPage[]> {
   const jobs: Promise<WikiPage[] | WikiPage | null>[] = [findBookPages(topic ? `${title} ${topic.replace(/\(.*\)/, "")}` : title, author).catch(() => [])];
-  const h = (hints || []).join(" ").toLowerCase();
   const q = topic ? topic.replace(/^.*\((.+)\)$/, "$1") : title;
-  if (h.includes("awoiaf")) jobs.push(mediaWikiPage("https://awoiaf.westeros.org/api.php", "https://awoiaf.westeros.org/index.php/", "AWOIAF", q));
-  if (h.includes("fandom")) jobs.push(mediaWikiPage("https://gameofthrones.fandom.com/api.php", "https://gameofthrones.fandom.com/wiki/", "Fandom", q));
+  // "mw:<api>|<site>|<etiket>" ipuçları: evrene özel wiki'ler (AWOIAF, Tolkien Gateway, Dune Wiki…)
+  for (const hint of hints || []) {
+    const m = /^mw:([^|]+)\|([^|]+)\|(.+)$/.exec(hint);
+    if (m) jobs.push(mediaWikiPage(m[1], m[2], m[3], q));
+  }
   const out = await Promise.all(jobs);
   return out.flat().filter((x): x is WikiPage => Boolean(x));
 }

@@ -4,7 +4,7 @@ import type { Response } from "express";
 import { z } from "zod";
 import { buildJsonPrompt, buildStreamPrompt, type Effort, type JsonRequest, type StreamRequest } from "../shared/tasks.ts";
 export type { JsonRequest, StreamRequest };
-import { communityLinks, researchPages, freeAvailable, freeJsonTask, NEEDS_LLM, wikiText } from "./free.ts";
+import { communityLinks, researchPages, withDeadline, freeAvailable, freeJsonTask, NEEDS_LLM, wikiText } from "./free.ts";
 import { checkOllama, ollamaJson, ollamaStream, type OllamaMessage } from "./ollama.ts";
 
 export const MODEL = process.env.LISAN_MODEL || "claude-opus-5-5";
@@ -81,7 +81,7 @@ export async function streamTask(req: StreamRequest, res: Response) {
       if (req.task === "analysis" && req.title) {
         // Web araması yerine: Wikipedia sayfalarını bağlam olarak ver
         sse(res, { type: "status", text: "Wikipedia'dan kaynak toplanıyor…" });
-        const pages = await researchPages(req.title, req.author, req.topic, req.sourceHints).catch(() => []);
+        const pages = await withDeadline(researchPages(req.title, req.author, req.topic, req.sourceHints), 10_000, []);
         for (const pg of pages) sse(res, { type: "source", url: pg.url, title: `${pg.lang.length === 2 ? `Wikipedia (${pg.lang.toUpperCase()})` : pg.lang}: ${pg.title}` });
         for (const l of communityLinks(req.title, req.author)) sse(res, { type: "source", ...l });
         extra = pages
