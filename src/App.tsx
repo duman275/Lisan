@@ -62,7 +62,7 @@ export default function App() {
       <NavContext.Provider value={{ route, go }}>
         <header className="top">
           <a className="brand" href="#/learn" onClick={(e) => (e.preventDefault(), go({ tab: "learn" }))}>
-            <span className="logo">L</span> Lisan
+            <img className="logo" src={`${import.meta.env.BASE_URL}icon.svg`} alt="" /> Lisan
           </a>
           <nav className="tabs">
             {TABS.map((t) => (
