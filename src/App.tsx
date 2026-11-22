@@ -8,12 +8,14 @@ import { Learn } from "./components/Learn";
 import { Library } from "./components/Library";
 import { Analysis, Catalog, Summary } from "./components/Books";
 import { SettingsView } from "./components/Settings";
+import { VideoTab } from "./components/Video";
 import { Player } from "./components/Player";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "learn", label: "Öğren", icon: "🎓" },
   { id: "library", label: "Kütüphane", icon: "📚" },
   { id: "catalog", label: "Efsaneler", icon: "🏛️" },
+  { id: "video", label: "Video", icon: "🎬" },
   { id: "summary", label: "Özetler", icon: "🧾" },
   { id: "analysis", label: "Analiz", icon: "🔎" },
   { id: "settings", label: "Ayarlar", icon: "⚙️" },
@@ -83,6 +85,7 @@ export default function App() {
           {route.tab === "learn" && <Learn />}
           {route.tab === "library" && <Library />}
           {route.tab === "catalog" && <Catalog />}
+          {route.tab === "video" && <VideoTab />}
           {route.tab === "summary" && <Summary />}
           {route.tab === "analysis" && <Analysis />}
           {route.tab === "settings" && <SettingsView />}

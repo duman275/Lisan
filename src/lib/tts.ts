@@ -369,3 +369,10 @@ export function pickVoiceByGender(lang: string, g: "f" | "m"): string | undefine
   if (g === "m") return n ? NEURAL_PREFIX + n.id : d?.voiceURI;
   return d?.voiceURI || (n ? NEURAL_PREFIX + n.id : device[0]?.voiceURI);
 }
+
+/** Nöral sesle tek bir metni ses dosyasına çevirir (dublaj için). */
+export async function synthNeural(text: string, voiceId: string): Promise<string> {
+  const t = await loadVits();
+  const blob = await t.predict({ text, voiceId: voiceId as Parameters<Vits["predict"]>[0]["voiceId"] });
+  return URL.createObjectURL(blob);
+}

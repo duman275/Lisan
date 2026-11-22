@@ -21,6 +21,13 @@ Site, `main` dalına her gönderimde GitHub Actions ile otomatik derlenir (`.git
 - **Kadın / Erkek** seçimi okuyucuda ve Ayarlar'da; podcast'te sunucu A kadın, B erkek sesidir.
 - **Türkçe tam kitaplar:** telif süresi dolmuş Türk klasikleri Vikikaynak'tan (Efsaneler → Türk Edebiyatı → “Türkçe tam metin”).
 
+### 🎬 Video: altyazı, çeviri ve dublaj
+Ayrı “Video” sekmesi. 2 GB'a kadar video (veya ses) telefonda saklanır (Origin Private File System).
+- **Altyazı çıkarma:** video Gemini Files API'ye 16 MB'lık parçalarla yüklenir (48 saat sonra Gemini'den silinir), konuşmalar 15 dakikalık bölümlerle zaman damgalı altyazıya dökülür. Hazır .srt/.vtt de yüklenebilir.
+- **Çeviri:** altyazılar 13 dilden birine çevrilir; video üstünde iki satır altyazı (ör. orijinal + Türkçe) dil öğrenmek için.
+- **Dublaj:** seçilen dildeki altyazılar video oynarken kadın/erkek (nöral ya da telefon) sesleriyle seslendirilir; orijinal ses kısılır, uzun cümleler hızlandırılır.
+- **Dışa aktarma:** her dil için SRT/VTT indirme; metne dokunarak videoda o ana gitme; kaldığın yeri hatırlama.
+
 ### 🌌 Evrenler: Buz ve Ateşin Şarkısı, Orta Dünya, Dune
 Efsaneler sekmesinde her evren ayrı bir sayfadır; her konuda “Derin analiz (kaynaklı)”, wiki/fandom/Reddit bağlantıları ve YouTube kanalları (Geek Teori, Karakare, Legendarium Türkiye, 40ip, Argümento, Umur Tezer ve evrene özel İngilizce kanallar) bulunur.
 

@@ -9,7 +9,7 @@ import { narrator, nativeCode, useNarrator } from "../lib/tts";
 
 const STATIC_BUILD = import.meta.env.VITE_STATIC === "1";
 
-export type Tab = "learn" | "library" | "catalog" | "summary" | "analysis" | "settings";
+export type Tab = "learn" | "library" | "catalog" | "video" | "summary" | "analysis" | "settings";
 export interface Route {
   tab: Tab;
   readerId?: string;

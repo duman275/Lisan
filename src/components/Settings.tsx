@@ -50,7 +50,7 @@ export function SettingsView() {
           </div>
         )}
       </div>
-      {STATIC && <PhoneAI />}
+      <PhoneAI />
       <div className="card">
         <h3>Genel</h3>
         <div className="form">
