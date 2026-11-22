@@ -84,6 +84,48 @@ export function SettingsView() {
       </div>
 
       <div className="card">
+        <h3>Asistan ve sesli komutlar</h3>
+        <p className="muted small">
+          🎙 düğmesine bas (ya da Ctrl+Shift+Boşluk) ve konuş: “duraklat”, “devam”, “sonraki”, “hızlandır”, “20 dakika sonra kapat”, “kartları aç”, “kütüphaneye git” gibi
+          kısa komutlar yapay zekâ olmadan anında çalışır. Daha karmaşık istekler (“Suç ve Ceza'yı aç ve sesli oku”, “bana 10 iş İngilizcesi kalıbı ekle”) asistana gider.
+        </p>
+        <div className="form">
+          <label className="check">
+            <input type="checkbox" checked={settings.voiceCommands} onChange={(e) => setSettings((s) => ({ ...s, voiceCommands: e.target.checked }))} /> Sesli komut düğmesini göster
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={settings.wakeWord} onChange={(e) => setSettings((s) => ({ ...s, wakeWord: e.target.checked }))} /> Eller serbest: “Lisan, …” diye seslenince dinle (mikrofon açık kalır)
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={settings.agentSpeak} onChange={(e) => setSettings((s) => ({ ...s, agentSpeak: e.target.checked }))} /> Asistan yanıtlarını sesli oku
+          </label>
+          <label>
+            Asistan yapay zekâsı
+            <select value={settings.agentProvider} onChange={(e) => setSettings((s) => ({ ...s, agentProvider: e.target.value as typeof s.agentProvider }))}>
+              <option value="auto">Otomatik</option>
+              <option value="ollama">Ollama — bilgisayarında yerel, tamamen ücretsiz</option>
+              <option value="claude">Claude — en akıllı (API kullanımı ücretli)</option>
+            </select>
+          </label>
+        </div>
+        <p className="small">
+          Durum: Claude {health.agent.claude ? "✅" : "❌"} · Ollama {health.agent.ollama ? `✅ (${health.agent.ollamaModel})` : "❌ çalışmıyor"}
+        </p>
+        {!health.agent.ollama && (
+          <details className="small">
+            <summary>Ücretsiz asistanı kur (Ollama)</summary>
+            <ol>
+              <li>ollama.com adresinden Ollama'yı indirip kur.</li>
+              <li>
+                Terminalde: <code>ollama pull qwen3:8b</code> (≈5 GB; zayıf bilgisayarda <code>qwen3:4b</code>, sunucuda <code>OLLAMA_MODEL=qwen3:4b</code>)
+              </li>
+              <li>Lisan sunucusunu aynı bilgisayarda çalıştır; asistan Ollama'yı kendiliğinden bulur.</li>
+            </ol>
+          </details>
+        )}
+      </div>
+
+      <div className="card">
         <h3>Veriler</h3>
         <p className="muted small">İlerlemen, kartların ve kütüphanen yalnızca bu cihazdaki tarayıcıda saklanır. Cihaz değiştirirken yedek al.</p>
         <div className="row wrap">

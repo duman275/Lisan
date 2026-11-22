@@ -115,7 +115,8 @@ export function Summary() {
     if (route.prefill?.auto && route.prefill.title && health.ai) {
       setTitle(route.prefill.title);
       setAuthor(route.prefill.author || "");
-      void run(route.prefill.title, route.prefill.author || "", mode);
+      if (route.prefill.mode) setMode(route.prefill.mode);
+      void run(route.prefill.title, route.prefill.author || "", route.prefill.mode || mode);
     }
   }, [route.prefill, health.ai]); // eslint-disable-line react-hooks/exhaustive-deps
 

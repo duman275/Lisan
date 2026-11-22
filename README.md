@@ -20,6 +20,31 @@ Uygulama, etkisi en iyi kanıtlanmış yöntemleri günlük bir akışta birleş
 
 Ayrıca: seviye tespit sınavı (18 soru), seviye başına 10 ünitelik müfredat (60 ünite), günlük plan, XP, seri ve haftalık grafik.
 
+**Kurslar** (CEFR müfredatına ek, beceri odaklı):
+| Kurs | Seviye | İçerik |
+|---|---|---|
+| ☕ Günlük Konuşma (Everyday English) | A2 → B1 | 15 ders: small talk, sipariş, plan yapma, telefon, şikâyet, duygular, vedalaşma… |
+| 🎤 Konuşma Akıcılığı (Speaking Fluency) | A2 → C1 | 12 ders: düşünürken boşluk doldurma, takılmadan anlatma, vurgu/tonlama, bağlantılı konuşma, Türkler için zor sesler |
+| 🗽 Native gibi konuş (Native English) | B2 → C2 | 15 ders: gonna/wanna, phrasal verb'ler, deyimler, güncel argo, Amerikan/İngiliz farkı, ironi, dizi dili, schwa ve aksan |
+| 💼 İş Dili (Business English) | B1 → C1 | 10 ders: toplantı, e-posta, sunum, mülakat, müzakere |
+
+**Eller serbest sesli sohbet:** Öğretmen sekmesinde mikrofonla konuşursun, öğretmen sesli yanıt verir ve tekrar dinlemeye geçer; ekrana dokunmadan sohbet edilir. Yeni modlar: Günlük konuşma, Native sohbet (deyim & argo), Konuşma akıcılığı koçu.
+
+### 🤖 Lisan Asistan ve sesli komutlar
+Sağ alttaki 🤖 asistan uygulamayı senin yerine kullanır: kitap açar ve sesli okur, kurs/ders başlatır, desteye kelime ekler, özet ve analiz başlatır, oynatıcıyı yönetir, ilerlemeni söyler ve ne çalışman gerektiğini önerir. Yazarak ya da konuşarak kullanılır.
+
+- **🎙 Sesli komut** (düğme veya Ctrl+Shift+Boşluk): “duraklat”, “devam”, “sonraki”, “hızlandır”, “20 dakika sonra kapat”, “kartları aç”, “kütüphaneye git” gibi kısa komutlar **yapay zekâ olmadan, anında ve ücretsiz** çalışır.
+- **Eller serbest:** Ayarlar'dan açılınca “Lisan, Suç ve Ceza'yı aç ve oku” diye seslenmen yeterli.
+- **Ücretsiz yapay zekâ:** Asistan, bilgisayarında çalışan [Ollama](https://ollama.com) ile tamamen ücretsiz çalışabilir (API anahtarı gerekmez). Claude anahtarı varsa daha akıllı Claude kullanılabilir; Ayarlar'dan seçilir.
+
+Ücretsiz asistan kurulumu:
+```bash
+# 1) https://ollama.com adresinden Ollama'yı kur
+ollama pull qwen3:8b        # ≈5 GB; zayıf bilgisayarda: qwen3:4b (sonra .env'de OLLAMA_MODEL=qwen3:4b)
+# 2) Lisan'ı aynı bilgisayarda çalıştır — asistan Ollama'yı kendiliğinden bulur
+npm run dev
+```
+
 ### 📚 Kitap okuyucu ve podcast modu
 - Cümle cümle **sesli okuma** ve vurgulama, kaldığın yeri hatırlama
 - Ses seçimi, **anlatım tarzları** (Masalcı, Derin & ciddi, Enerjik podcast, Dil öğrencisi…), hız ayarı, **uyku zamanlayıcısı**, medya tuşu ve kilit ekranı desteği
@@ -58,7 +83,9 @@ npm run build
 npm start                 # http://localhost:8787 (API + arayüz tek sunucuda)
 ```
 
-API anahtarı olmadan da açılır: kitap okuma, sesli dinleme, PDF, kartlar ve hazır deste çalışır; yapay zekâ özellikleri (dersler, öğretmen, hikâye, özet, analiz, podcast, kelime anlamı) anahtar gerektirir.
+API anahtarı olmadan da açılır: kitap okuma, sesli dinleme, PDF, kartlar, hazır deste ve sesli komutlar çalışır; Ollama kuruluysa asistan da ücretsiz çalışır. İçerik üreten özellikler (dersler, öğretmen, hikâye, özet, analiz, podcast, kelime anlamı) Claude API anahtarı gerektirir.
+
+Sesli komut ve konuşma tanıma için Chrome veya Edge önerilir (Firefox konuşma tanımayı desteklemez).
 
 ### Ortam değişkenleri
 | Değişken | Açıklama |
@@ -66,6 +93,8 @@ API anahtarı olmadan da açılır: kitap okuma, sesli dinleme, PDF, kartlar ve 
 | `ANTHROPIC_API_KEY` | Claude API anahtarı (yalnızca sunucuda tutulur, tarayıcıya gönderilmez) |
 | `PORT` | Sunucu portu (varsayılan 8787) |
 | `LISAN_MODEL` | Model (varsayılan `claude-opus-5-5`) |
+| `AGENT_MODEL` | Asistan modeli (varsayılan `LISAN_MODEL`; daha ucuz seçenek `claude-haiku-5-5`) |
+| `OLLAMA_URL`, `OLLAMA_MODEL` | Ücretsiz yerel asistan (varsayılan `http://localhost:11434`, `qwen3:8b`) |
 
 ## Mimari
 
@@ -73,15 +102,17 @@ API anahtarı olmadan da açılır: kitap okuma, sesli dinleme, PDF, kartlar ve 
 lisan/
 ├── server/            Express API (Node, TypeScript)
 │   ├── ai.ts          Claude çağrıları: akışlı (SSE) görevler + yapılandırılmış JSON görevler
+│   ├── agent.ts       Yardımcı ajan: araç tanımları, Claude ve Ollama sağlayıcıları
 │   ├── prompts.ts     Görev başına sistem istemleri
 │   └── books.ts       Project Gutenberg arama/indirme
 └── src/               React + Vite arayüzü
     ├── components/    Öğren, Kütüphane/Okuyucu, Efsaneler, Özet, Analiz, Ayarlar, Oynatıcı
-    ├── lib/           tts (anlatıcı), srs (aralıklı tekrar), pdf, speech, store (IndexedDB/localStorage)
-    └── data/          diller, müfredat, katalog, başlangıç destesi
+    ├── lib/           tts (anlatıcı), srs (aralıklı tekrar), pdf, speech (konuşma tanıma), actions (asistan araçları + yerel sesli komutlar), store
+    └── data/          diller, müfredat, kurslar, katalog, başlangıç destesi
 ```
 
 - **Claude API:** analiz görevi `web_search` + `web_fetch` sunucu araçlarını kullanır, kaynaklar arayüzde listelenir. Dersler, desteler, sınav, podcast senaryosu ve kelime anlamları yapılandırılmış çıktı (Zod şeması) ile üretilir. Bir istek güvenlik sınıflandırıcısına takılırsa sunucu tarafı yedek model (`fallbacks: "default"`) devreye girer.
+- **Asistan:** model bir tur yürütür, istediği araçları (gezinme, oynatıcı, kart ekleme, kitap açma…) tarayıcı çalıştırır ve sonucu geri gönderir; en fazla 8 adım. Claude'da ek olarak web araması vardır.
 - **Seslendirme:** tarayıcının Web Speech API'si; cihazdaki tüm sesler kullanılabilir. En doğal sonuç için Chrome'da “Google…”, Edge'de “…Online (Natural)”, Apple cihazlarda “Gelişmiş/Premium” sesler önerilir.
 - **Veriler:** ilerleme, kartlar ve kütüphane yalnızca tarayıcıda (localStorage + IndexedDB) tutulur; Ayarlar'dan yedeklenip geri yüklenebilir.
 

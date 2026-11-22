@@ -24,6 +24,10 @@ function write<T>(key: string, value: T) {
   listeners.get(key)?.forEach((fn) => fn());
 }
 
+/** Bileşen dışı (ör. asistan araçları) okuma/yazma */
+export const getStored = read;
+export const setStored = write;
+
 export function usePersistent<T>(key: string, fallback: T): [T, (v: T | ((prev: T) => T)) => void] {
   const [value, setValue] = useState<T>(() => read(key, fallback));
   useEffect(() => {
@@ -54,6 +58,10 @@ export interface Settings {
   podcastVoiceA?: string;
   podcastVoiceB?: string;
   dailyGoal: number; // dakika
+  voiceCommands: boolean; // mikrofon düğmesi ile sesli komut
+  wakeWord: boolean; // "Lisan" diye seslenince sürekli dinleme
+  agentProvider: "auto" | "claude" | "ollama";
+  agentSpeak: boolean; // asistan yanıtlarını sesli oku
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -63,10 +71,19 @@ export const DEFAULT_SETTINGS: Settings = {
   rate: 1,
   pitch: 1,
   dailyGoal: 45,
+  voiceCommands: true,
+  wakeWord: false,
+  agentProvider: "auto",
+  agentSpeak: true,
 };
 
-export function useSettings() {
-  return usePersistent<Settings>("settings", DEFAULT_SETTINGS);
+export function useSettings(): [Settings, (v: Settings | ((prev: Settings) => Settings)) => void] {
+  const [s, set] = usePersistent<Settings>("settings", DEFAULT_SETTINGS);
+  return [{ ...DEFAULT_SETTINGS, ...s }, set];
+}
+
+export function getSettings(): Settings {
+  return { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>("settings", {}) };
 }
 
 export function useCards() {
@@ -156,6 +173,10 @@ export async function savePosition(id: string, position: number) {
     m.position = position;
     await set(META, meta);
   }
+}
+
+export async function libraryMeta(): Promise<LibraryMeta[]> {
+  return (await get<LibraryMeta[]>(META)) || [];
 }
 
 export function useLibrary(): LibraryMeta[] {

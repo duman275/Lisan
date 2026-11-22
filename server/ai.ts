@@ -6,13 +6,13 @@ import * as P from "./prompts.ts";
 
 export const MODEL = process.env.LISAN_MODEL || "claude-opus-5-5";
 // Güvenlik sınıflandırıcısı bir isteği reddederse sunucu tarafında otomatik yedek model devreye girer.
-const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
 let client: Anthropic | null = null;
 export function aiAvailable(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 }
-function getClient(): Anthropic {
+export function getClient(): Anthropic {
   if (!client) client = new Anthropic();
   return client;
 }
@@ -265,6 +265,8 @@ export interface JsonRequest {
   context?: string;
   text?: string;
   title?: string;
+  /** Kurs odağı (ör. günlük konuşma, ana dil gibi konuşma) */
+  courseFocus?: string;
 }
 
 export async function jsonTask(req: JsonRequest): Promise<unknown> {
@@ -277,7 +279,9 @@ export async function jsonTask(req: JsonRequest): Promise<unknown> {
   switch (req.task) {
     case "lesson":
       system = P.LESSON_SYSTEM;
-      content = `Create a lesson. Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${req.level}. Unit: ${req.topic}. Include 10-14 vocabulary items, a 8-12 line dialogue, 8 exercises (mix of kinds) and 5 shadowing sentences.`;
+      content = `Create a lesson. Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${req.level}. Unit: ${req.topic}.${
+        req.courseFocus ? ` Course focus: ${clip(req.courseFocus, 1000)}` : ""
+      } Include 10-14 vocabulary items, a 8-12 line dialogue, 8 exercises (mix of kinds) and 5 shadowing sentences.`;
       format = betaZodOutputFormat(Lesson);
       effort = "medium";
       break;

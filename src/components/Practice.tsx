@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { jsonAI, streamAI } from "../lib/api";
 import { Markdown } from "../lib/markdown";
 import { canRecognize, listen } from "../lib/speech";
@@ -15,6 +15,12 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 const MODES = [
   { id: "free conversation", label: "Serbest sohbet" },
+  { id: "everyday small talk like a friendly native speaker, using natural everyday spoken language and contractions", label: "Günlük konuşma" },
+  {
+    id: "native-like casual chat: use natural idioms, phrasal verbs and current informal expressions (no offensive slang) and briefly explain the new ones after the correction section",
+    label: "Native sohbet (deyim & argo)",
+  },
+  { id: "speaking fluency coach: keep my turns long, ask open questions, and in the feedback comment on fluency and naturalness, suggesting more natural phrasing", label: "Konuşma akıcılığı koçu" },
   { id: "role-play: ordering at a restaurant", label: "Rol: restoran" },
   { id: "role-play: job interview", label: "Rol: iş görüşmesi" },
   { id: "role-play: travel and hotel check-in", label: "Rol: seyahat" },
@@ -34,12 +40,49 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
   const [err, setErr] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [rec, setRec] = useState<{ stop: () => void } | null>(null);
+  const [handsFree, setHandsFree] = useState(false);
+  const handsFreeRef = useRef(false);
+  const historyRef = useRef(history);
+  historyRef.current = history;
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), [history.length, pending]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [history.length, pending]);
+  useEffect(() => () => void (handsFreeRef.current = false), []);
 
-  async function send(text: string) {
+  // Eller serbest mod: dinle → gönder → yanıtı seslendir → tekrar dinle
+  const listenLoop = useCallback(async (tries = 0): Promise<void> => {
+    if (!handsFreeRef.current) return;
+    const l = listen(lang);
+    setRec(l);
+    let heard = "";
+    try {
+      heard = (await l.promise).trim();
+    } catch (e) {
+      setErr((e as Error).message);
+      handsFreeRef.current = false;
+      setHandsFree(false);
+    } finally {
+      setRec(null);
+    }
+    if (!handsFreeRef.current) return;
+    if (!heard) {
+      if (tries < 3) return listenLoop(tries + 1);
+      handsFreeRef.current = false;
+      setHandsFree(false);
+      return;
+    }
+    if (/^(stop|dur|bitir|kapat|that's all)\b/i.test(heard)) {
+      handsFreeRef.current = false;
+      setHandsFree(false);
+      return;
+    }
+    await sendRef.current(heard, true);
+  }, [lang]);
+
+  async function send(text: string, voice = false) {
     if (!text.trim() || busy) return;
-    const next: Msg[] = [...history, { role: "user", content: text.trim() }];
+    const next: Msg[] = [...historyRef.current, { role: "user", content: text.trim() }];
     setHistory(next);
     setInput("");
     setBusy(true);
@@ -47,23 +90,30 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
     setPending("");
     try {
       const r = await streamAI(
-        { task: "tutor", targetLang: langByCode(lang).name, nativeLang: settings.nativeLang, level, mode, messages: next },
+        { task: "tutor", targetLang: langByCode(lang).name, nativeLang: settings.nativeLang, level, mode: voice ? `${mode}. This is a spoken voice conversation: keep your reply short (2-4 sentences) before the correction section.` : mode, messages: next },
         { onText: (_c, full) => setPending(full) },
       );
       setHistory([...next, { role: "assistant", content: r.text }]);
       addXp(4);
-      if (autoSpeak) {
+      if (autoSpeak || handsFreeRef.current) {
         // Yalnızca hedef dildeki ana yanıtı oku (düzeltme bölümünden önce)
         const main = plainText(r.text.split(/✍️|Düzeltme/)[0]);
-        narrator.play(splitSentences(main, lang).map((s) => ({ text: s.text, lang })), { title: "Öğretmen", ownerId: "tutor" });
+        const segs = splitSentences(main, lang).map((s) => ({ text: s.text, lang }));
+        if (segs.length) narrator.play(segs, { title: "Öğretmen", ownerId: "tutor", onEnd: () => void listenLoop() });
+        else void listenLoop();
       }
     } catch (e) {
       setErr((e as Error).message);
+      handsFreeRef.current = false;
+      setHandsFree(false);
     } finally {
       setPending("");
       setBusy(false);
     }
   }
+
+  const sendRef = useRef(send);
+  sendRef.current = send;
 
   async function speak() {
     if (rec) return rec.stop();
@@ -79,6 +129,19 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
     }
   }
 
+  function toggleHandsFree() {
+    const on = !handsFree;
+    setHandsFree(on);
+    handsFreeRef.current = on;
+    if (on) {
+      narrator.stop();
+      void listenLoop();
+    } else {
+      rec?.stop();
+      narrator.stop();
+    }
+  }
+
   return (
     <div className="stack">
       <div className="row wrap between">
@@ -87,7 +150,12 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
             <option key={m.id} value={m.id}>{m.label}</option>
           ))}
         </select>
-        <div className="row">
+        <div className="row wrap">
+          {canRecognize() && (
+            <button className={`btn ${handsFree ? "primary" : ""}`} onClick={toggleHandsFree} disabled={!health.ai}>
+              {handsFree ? "⏹ Sesli sohbeti bitir" : "🎧 Eller serbest sesli sohbet"}
+            </button>
+          )}
           <label className="check"><input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} /> Yanıtı sesli oku</label>
           <button className="btn ghost" onClick={() => setHistory([])}>Yeni sohbet</button>
         </div>
@@ -115,6 +183,11 @@ export function Tutor({ lang, level }: { lang: string; level: string }) {
         {busy && !pending && <div className="status"><span className="spinner" /> Yazıyor…</div>}
         <div ref={end} />
       </div>
+      {handsFree && (
+        <div className="notice live">
+          {rec ? "🎙 Dinliyorum… konuş (bitirmek için “stop” de)" : busy ? "💭 Düşünüyor…" : "🔊 Öğretmen konuşuyor…"}
+        </div>
+      )}
       {err && <div className="error">{err}</div>}
       <form className="row composer" onSubmit={(e) => (e.preventDefault(), send(input))}>
         {canRecognize() && (

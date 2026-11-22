@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { aiAvailable, describeError, jsonTask, MODEL, streamTask, type JsonRequest, type StreamRequest } from "./ai.ts";
 import { bookText, searchBooks } from "./books.ts";
+import { AGENT_MODEL, agentTurn, checkOllama, OLLAMA_MODEL, pickProvider, type AgentMsg } from "./agent.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -32,8 +33,35 @@ function requireAi(_req: express.Request, res: express.Response, next: express.N
   next();
 }
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, ai: aiAvailable(), model: MODEL });
+app.get("/api/health", async (_req, res) => {
+  const ollama = await checkOllama();
+  res.json({
+    ok: true,
+    ai: aiAvailable(),
+    model: MODEL,
+    agent: { claude: aiAvailable(), claudeModel: AGENT_MODEL, ollama: ollama.available, ollamaModel: OLLAMA_MODEL, ollamaModels: ollama.models },
+  });
+});
+
+// Yardımcı ajan: modelin bir turunu yürütür; araçları tarayıcı çalıştırır.
+app.post("/api/agent", rateLimit, async (req, res) => {
+  const { history, state, provider: pref } = req.body as { history: AgentMsg[]; state?: string; provider?: string };
+  const provider = await pickProvider(pref);
+  if (!provider) {
+    res.status(503).json({
+      error: "Asistan için ya sunucuda ANTHROPIC_API_KEY tanımlayın ya da bilgisayarınızda ücretsiz Ollama'yı çalıştırın (README'ye bakın). Basit sesli komutlar (duraklat, devam, sonraki, sekme aç) yine de çalışır.",
+    });
+    return;
+  }
+  if (!Array.isArray(history) || history.length > 80) {
+    res.status(400).json({ error: "Geçersiz sohbet geçmişi" });
+    return;
+  }
+  try {
+    res.json(await agentTurn(history, String(state || "").slice(0, 6000), provider));
+  } catch (err) {
+    res.status(502).json({ error: describeError(err) });
+  }
 });
 
 const STREAM_TASKS = new Set(["tutor", "story", "summary", "analysis", "explain"]);

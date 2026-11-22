@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getJSON } from "./lib/api";
-import { HealthContext, NavContext, type Route, type Tab } from "./components/common";
+import { HealthContext, NavContext, NO_HEALTH, type Health, type Route, type Tab } from "./components/common";
+import { Assistant } from "./components/Assistant";
+import { registerNav } from "./lib/actions";
 import { Learn } from "./components/Learn";
 import { Library } from "./components/Library";
 import { Analysis, Catalog, Summary } from "./components/Books";
@@ -24,15 +26,23 @@ function parseHash(): Route {
 
 export default function App() {
   const [route, setRoute] = useState<Route>(parseHash);
-  const [health, setHealth] = useState({ ai: false, checked: false });
+  const [health, setHealth] = useState<Health>(NO_HEALTH);
+  const routeRef = useRef(route);
+  routeRef.current = route;
 
   useEffect(() => {
-    getJSON<{ ai: boolean }>("/api/health")
-      .then((h) => setHealth({ ai: h.ai, checked: true }))
-      .catch(() => setHealth({ ai: false, checked: true }));
+    const check = () =>
+      getJSON<Omit<Health, "checked">>("/api/health")
+        .then((h) => setHealth({ ai: h.ai, agent: h.agent, checked: true }))
+        .catch(() => setHealth({ ...NO_HEALTH, checked: true }));
+    void check();
+    const t = window.setInterval(check, 60_000); // Ollama sonradan açılırsa algıla
     const onHash = () => setRoute((r) => ({ ...parseHash(), prefill: r.prefill }));
     window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.clearInterval(t);
+    };
   }, []);
 
   const go = (r: Route) => {
@@ -41,6 +51,8 @@ export default function App() {
     if (location.hash !== hash) history.pushState(null, "", hash);
     window.scrollTo({ top: 0 });
   };
+
+  registerNav(go, () => routeRef.current);
 
   return (
     <HealthContext.Provider value={health}>
@@ -67,6 +79,7 @@ export default function App() {
           {route.tab === "settings" && <SettingsView />}
         </main>
         <Player />
+        <Assistant />
       </NavContext.Provider>
     </HealthContext.Provider>
   );

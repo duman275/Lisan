@@ -4,14 +4,15 @@ import { DAILY_PLAN, METHOD } from "../data/curriculum";
 import { langByCode, LANGUAGES, LEVEL_INFO, type Level } from "../data/languages";
 import { AiNotice, Segmented, useNav } from "./common";
 import { Flashcards } from "./Flashcards";
-import { Path } from "./Lesson";
+import { Courses, Path } from "./Lesson";
 import { Placement, Story, Tutor } from "./Practice";
 
-type Sub = "today" | "path" | "cards" | "story" | "tutor" | "test" | "method";
+type Sub = "today" | "path" | "courses" | "cards" | "story" | "tutor" | "test" | "method";
 
 const SUBS: { id: Sub; label: string }[] = [
   { id: "today", label: "Bugün" },
   { id: "path", label: "Müfredat" },
+  { id: "courses", label: "Kurslar" },
   { id: "cards", label: "Kartlar" },
   { id: "story", label: "Hikâye" },
   { id: "tutor", label: "Öğretmen" },
@@ -49,6 +50,7 @@ export function Learn() {
       <Segmented value={sub} options={SUBS} onChange={setSub} />
       {sub === "today" && <Today lang={lang} level={level} onGo={setSub} />}
       {sub === "path" && <Path lang={lang} level={level} setLevel={setLevel} />}
+      {sub === "courses" && <Courses lang={lang} initial={route.course} />}
       {sub === "cards" && <Flashcards lang={lang} level={level} />}
       {sub === "story" && <Story lang={lang} level={level} />}
       {sub === "tutor" && <Tutor lang={lang} level={level} />}
@@ -121,6 +123,12 @@ function Today({ lang, level, onGo }: { lang: string; level: Level; onGo: (s: Su
               </button>
             </li>
           ))}
+          <li>
+            <button className="unit" onClick={() => onGo("courses")}>
+              <span className="unit-num">🎤</span>
+              <span>Kurslar: Günlük Konuşma, Konuşma Akıcılığı, Native gibi konuş, İş Dili</span>
+            </button>
+          </li>
           <li>
             <span className="unit static">
               <span className="unit-num">＋</span>

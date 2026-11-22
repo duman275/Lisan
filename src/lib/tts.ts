@@ -149,7 +149,10 @@ export const narrator = new Narrator();
 
 export function useNarrator(): NarratorState {
   const [s, setS] = useState(narrator.state);
-  useEffect(() => narrator.subscribe(() => setS(narrator.state)), []);
+  useEffect(() => {
+    const off = narrator.subscribe(() => setS(narrator.state));
+    return off;
+  }, []);
   return s;
 }
 

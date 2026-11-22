@@ -13,13 +13,21 @@ export interface Route {
   readerId?: string;
   prefill?: { title?: string; author?: string; text?: string; auto?: boolean; mode?: string };
   learnSub?: string;
+  course?: { course: string; unit?: number };
+  autoplay?: boolean;
 }
 export const NavContext = createContext<{ route: Route; go: (r: Route) => void }>({ route: { tab: "learn" }, go: () => {} });
 export const useNav = () => useContext(NavContext);
 
 // ---------- Sunucu durumu ----------
 
-export const HealthContext = createContext<{ ai: boolean; checked: boolean }>({ ai: false, checked: false });
+export interface Health {
+  ai: boolean;
+  checked: boolean;
+  agent: { claude: boolean; ollama: boolean; ollamaModel: string; ollamaModels: string[] };
+}
+export const NO_HEALTH: Health = { ai: false, checked: false, agent: { claude: false, ollama: false, ollamaModel: "", ollamaModels: [] } };
+export const HealthContext = createContext<Health>(NO_HEALTH);
 export const useHealth = () => useContext(HealthContext);
 
 export function AiNotice() {
@@ -122,7 +130,9 @@ export function AiOutput({
   extraActions?: ReactNode;
 }) {
   const [saved, setSaved] = useState(false);
-  useEffect(() => setSaved(false), [s.text === ""]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setSaved(false);
+  }, [s.text === ""]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!s.text && !s.loading && !s.error) return null;
   return (
     <div className="card output">

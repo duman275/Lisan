@@ -32,7 +32,7 @@ export function Reader({ id, onBack }: { id: string; onBack: () => void }) {
 
 function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }) {
   const [settings, setSettings] = useSettings();
-  const { go } = useNav();
+  const { go, route } = useNav();
   const health = useHealth();
   const n = useNarrator();
   const [lang, setLang] = useState(item.lang || (item.kind === "pdf" || item.kind === "paste" ? guessLang(item.text) : nativeCode(settings.nativeLang)));
@@ -66,6 +66,14 @@ function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }
   useEffect(() => {
     curRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [n.index, page]);
+
+  // Asistan/sesli komut "oku" dediyse otomatik başlat
+  useEffect(() => {
+    if (route.autoplay && route.readerId === item.id) {
+      playFrom(mine ? n.index : item.position || 0);
+      go({ ...route, autoplay: false });
+    }
+  }, [route.autoplay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pageSentences = sentences.slice(page * PAGE, (page + 1) * PAGE);
   const pageText = pageSentences.map((s) => s.text).join(" ");

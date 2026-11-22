@@ -7,6 +7,7 @@ import { addXp, cacheGet, cacheSet, useCards, useProgress, useSettings } from ".
 import { similarity } from "../lib/text";
 import { narrator, useVoices } from "../lib/tts";
 import { CURRICULUM } from "../data/curriculum";
+import { COURSES, courseName } from "../data/courses";
 import { langByCode, LEVELS, type Level } from "../data/languages";
 import { useHealth } from "./common";
 
@@ -27,7 +28,18 @@ export function Path({ lang, level, setLevel }: { lang: string; level: Level; se
   const done = units.filter((_, i) => progress.doneUnits[`${lang}|${level}|${i}`]).length;
 
   if (open !== null)
-    return <LessonView lang={lang} level={level} index={open} topic={units[open]} onBack={() => setOpen(null)} onNext={() => setOpen(open + 1 < units.length ? open + 1 : null)} />;
+    return (
+      <LessonView
+        lang={lang}
+        level={level}
+        topic={units[open]}
+        heading={`${level} · Ünite ${open + 1}`}
+        doneKey={`${lang}|${level}|${open}`}
+        cacheKey={`lesson|${lang}|${level}|${open}`}
+        onBack={() => setOpen(null)}
+        onNext={() => setOpen(open + 1 < units.length ? open + 1 : null)}
+      />
+    );
 
   return (
     <div className="stack">
@@ -61,7 +73,27 @@ export function Path({ lang, level, setLevel }: { lang: string; level: Level; se
   );
 }
 
-function LessonView({ lang, level, index, topic, onBack, onNext }: { lang: string; level: Level; index: number; topic: string; onBack: () => void; onNext: () => void }) {
+export function LessonView({
+  lang,
+  level,
+  topic,
+  heading,
+  doneKey,
+  cacheKey,
+  courseFocus,
+  onBack,
+  onNext,
+}: {
+  lang: string;
+  level: string;
+  topic: string;
+  heading: string;
+  doneKey: string;
+  cacheKey: string;
+  courseFocus?: string;
+  onBack: () => void;
+  onNext: () => void;
+}) {
   const [settings] = useSettings();
   const [, setProgress] = useProgress();
   const [cards, setCards] = useCards();
@@ -69,7 +101,7 @@ function LessonView({ lang, level, index, topic, onBack, onNext }: { lang: strin
   const [data, setData] = useState<LessonData | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const key = `lesson|${lang}|${level}|${index}|${settings.nativeLang}`;
+  const key = `${cacheKey}|${settings.nativeLang}`;
 
   async function load(force = false) {
     setErr("");
@@ -78,7 +110,7 @@ function LessonView({ lang, level, index, topic, onBack, onNext }: { lang: strin
       const cached = force ? undefined : await cacheGet<LessonData>(key);
       if (cached) return setData(cached);
       if (!health.ai) throw new Error("Ders üretmek için yapay zekâ gerekir (sunucuda ANTHROPIC_API_KEY yok).");
-      const d = await jsonAI<LessonData>({ task: "lesson", targetLang: langByCode(lang).name, nativeLang: settings.nativeLang, level, topic });
+      const d = await jsonAI<LessonData>({ task: "lesson", targetLang: langByCode(lang).name, nativeLang: settings.nativeLang, level, topic, courseFocus });
       await cacheSet(key, d);
       setData(d);
     } catch (e) {
@@ -93,7 +125,7 @@ function LessonView({ lang, level, index, topic, onBack, onNext }: { lang: strin
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function complete() {
-    setProgress((p) => ({ ...p, doneUnits: { ...p.doneUnits, [`${lang}|${level}|${index}`]: true } }));
+    setProgress((p) => ({ ...p, doneUnits: { ...p.doneUnits, [doneKey]: true } }));
     addXp(30);
     onNext();
   }
@@ -106,7 +138,7 @@ function LessonView({ lang, level, index, topic, onBack, onNext }: { lang: strin
         {data && <button className="btn ghost" onClick={() => load(true)}>↻ Yeniden üret</button>}
       </div>
       <h2>
-        {level} · Ünite {index + 1}: {data?.title || topic}
+        {heading}: {data?.title || topic}
       </h2>
       {loading && <div className="status"><span className="spinner" /> Ders hazırlanıyor (ilk seferde ~20 sn)…</div>}
       {err && <div className="error">{err}</div>}
@@ -291,5 +323,83 @@ export function Shadowing({ lang, sentences }: { lang: string; sentences: string
         </div>
       ))}
     </section>
+  );
+}
+
+export function Courses({ lang, initial }: { lang: string; initial?: { course: string; unit?: number } }) {
+  const [progress] = useProgress();
+  const [courseId, setCourseId] = useState<string | null>(initial?.course || null);
+  const [open, setOpen] = useState<number | null>(initial?.unit !== undefined ? initial.unit : null);
+  useEffect(() => {
+    if (initial) {
+      setCourseId(initial.course);
+      setOpen(initial.unit ?? null);
+    }
+  }, [initial]);
+  const course = COURSES.find((c) => c.id === courseId);
+
+  if (course && open !== null && course.units[open])
+    return (
+      <LessonView
+        lang={lang}
+        level={course.lessonLevel}
+        topic={course.units[open]}
+        heading={`${course.icon} ${course.name} · Ders ${open + 1}`}
+        courseFocus={course.focus}
+        doneKey={`${lang}|course:${course.id}|${open}`}
+        cacheKey={`course|${lang}|${course.id}|${open}`}
+        onBack={() => setOpen(null)}
+        onNext={() => setOpen(open + 1 < course.units.length ? open + 1 : null)}
+      />
+    );
+
+  if (course) {
+    const done = course.units.filter((_, i) => progress.doneUnits[`${lang}|course:${course.id}|${i}`]).length;
+    return (
+      <div className="stack">
+        <button className="btn ghost self-start" onClick={() => setCourseId(null)}>← Kurslar</button>
+        <div className="card">
+          <h2>{course.icon} {courseName(course, lang)}</h2>
+          <p>{course.desc}</p>
+          <p className="muted small">Önerilen seviye: {course.level} · {done}/{course.units.length} ders tamamlandı</p>
+          <div className="progressbar"><div style={{ width: `${(done / course.units.length) * 100}%` }} /></div>
+        </div>
+        <ol className="path">
+          {course.units.map((u, i) => {
+            const isDone = progress.doneUnits[`${lang}|course:${course.id}|${i}`];
+            return (
+              <li key={u}>
+                <button className={`unit ${isDone ? "done" : ""}`} onClick={() => setOpen(i)}>
+                  <span className="unit-num">{isDone ? "✓" : i + 1}</span>
+                  <span>{u}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stack">
+      <p className="muted">Seviye müfredatına ek olarak, belirli bir beceriye odaklanan kurslar. Her ders: doğal kelime ve kalıplar, açıklama, diyalog, alıştırmalar ve gölgeleme.</p>
+      <div className="grid2">
+        {COURSES.map((c) => {
+          const done = c.units.filter((_, i) => progress.doneUnits[`${lang}|course:${c.id}|${i}`]).length;
+          return (
+            <button key={c.id} className="card course" onClick={() => (setCourseId(c.id), setOpen(null))}>
+              <div className="big-icon">{c.icon}</div>
+              <h3>{courseName(c, lang)}</h3>
+              <p className="small">{c.desc}</p>
+              <div className="row between small muted">
+                <span>{c.level}</span>
+                <span>{done}/{c.units.length} ders</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
