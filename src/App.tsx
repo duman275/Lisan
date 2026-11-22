@@ -3,7 +3,7 @@ import { getJSON } from "./lib/api";
 import { HealthContext, NavContext, NO_HEALTH, type Health, type Route, type Tab } from "./components/common";
 import { Assistant } from "./components/Assistant";
 import { registerNav } from "./lib/actions";
-import { useSettings } from "./lib/store";
+import { getSettings, setStored, useSettings } from "./lib/store";
 import { Learn } from "./components/Learn";
 import { Library } from "./components/Library";
 import { Analysis, Catalog, Summary } from "./components/Books";
@@ -20,6 +20,25 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "analysis", label: "Analiz", icon: "🔎" },
   { id: "settings", label: "Ayarlar", icon: "⚙️" },
 ];
+
+/**
+ * Tek dokunuşla kurulum: #gemini=ANAHTAR bağlantısı anahtarı yalnızca bu cihazdaki ayarlara kaydeder.
+ * (# sonrası sunucuya gönderilmez; kayıttan sonra adres çubuğundan silinir.)
+ */
+function consumeSetupLink(): string | null {
+  const m = /[#&?]gemini=([A-Za-z0-9._-]{20,200})/.exec(location.hash);
+  if (!m) return null;
+  setStored("settings", {
+    ...getSettings(),
+    llmProvider: "gemini",
+    llmBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    llmModel: "gemini-3.5-flash",
+    llmKey: m[1],
+  });
+  history.replaceState(null, "", `${location.pathname}#/settings`);
+  return "✅ Gemini anahtarı bu telefona kaydedildi. Öğretmen, podcast, altyazı ve asistan hazır.";
+}
+const SETUP_MSG = consumeSetupLink();
 
 function parseHash(): Route {
   const [tab, id] = location.hash.replace(/^#\/?/, "").split("/");
@@ -82,6 +101,7 @@ export default function App() {
           </nav>
         </header>
         <main>
+          {SETUP_MSG && <div className="notice live">{SETUP_MSG}</div>}
           {route.tab === "learn" && <Learn />}
           {route.tab === "library" && <Library />}
           {route.tab === "catalog" && <Catalog />}
