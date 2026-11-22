@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { STATIC } from "../lib/api";
 import { LLM_PRESETS, listModels, testLlm } from "../lib/browserLLM";
 import { InstallButton } from "./Install";
+import { canRecognize, MIC_HELP, micState, requestMic, type MicState } from "../lib/speech";
 import { VoicePicker } from "./VoicePicker";
 import { NEURAL_PREFIX, neuralFor } from "../lib/voices";
 import { langByCode } from "../data/languages";
@@ -138,6 +139,7 @@ export function SettingsView() {
         {!narrator.supported() && <div className="error">Bu tarayıcı sesli okumayı desteklemiyor.</div>}
       </div>
 
+      <MicCard />
       <div className="card">
         <h3>Yapay zekâ kaynağı, asistan ve sesli komutlar</h3>
         <p className="muted small">
@@ -340,6 +342,56 @@ function PhoneAI() {
         )}
       </div>
       {status && <p className="small">{status}</p>}
+    </div>
+  );
+}
+
+/** Mikrofon izni: durum, izin isteme ve reddedildiyse nasıl açılacağı. */
+function MicCard() {
+  const [state, setState] = useState<MicState | "checking">("checking");
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    void micState().then(setState);
+  }, []);
+  const label: Record<string, string> = {
+    checking: "kontrol ediliyor…",
+    granted: "✅ İzin verildi",
+    denied: "❌ Reddedildi",
+    prompt: "⚠️ Henüz izin verilmedi",
+    unsupported: "❌ Bu tarayıcıda mikrofon kullanılamıyor",
+  };
+  return (
+    <div className="card">
+      <h3>🎙 Mikrofon</h3>
+      <p className="small">
+        Öğretmenle sesli sohbet, telaffuz (gölgeleme) puanı, sesli komutlar ve “Lisan” uyandırma kelimesi için mikrofon izni gerekir. Durum: <b>{label[state]}</b>
+        {!canRecognize() && " · Bu tarayıcı konuşma tanımayı desteklemiyor (Chrome önerilir)."}
+      </p>
+      <div className="row wrap">
+        <button
+          className="btn primary"
+          onClick={async () => {
+            setMsg("");
+            const ok = await requestMic();
+            setState(await micState());
+            setMsg(ok ? "✅ Mikrofon hazır. Artık 🎙 düğmeleriyle konuşabilirsin." : MIC_HELP);
+          }}
+        >
+          🎙 Mikrofon izni ver
+        </button>
+      </div>
+      {(state === "denied" || msg) && <p className="small">{msg || MIC_HELP}</p>}
+      <details className="small">
+        <summary>İzin penceresi çıkmıyorsa</summary>
+        <ol>
+          <li>Telefonda <b>Ayarlar → Uygulamalar → Chrome → İzinler → Mikrofon</b> → “Uygulama kullanılırken izin ver”.</li>
+          <li>
+            Chrome'da <b>⋮ → Ayarlar → Site ayarları → Mikrofon</b> → <i>duman275.github.io</i> “Engellendi” listesindeyse dokunup <b>İzin ver</b> seç.
+          </li>
+          <li>Konuşma tanıma Google'ın ses servisini kullanır: <b>Google</b> uygulaması açık ve güncel olmalı.</li>
+          <li>Ayarları değiştirdikten sonra Lisan'ı kapatıp yeniden aç.</li>
+        </ol>
+      </details>
     </div>
   );
 }

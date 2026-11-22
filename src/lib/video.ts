@@ -1,6 +1,6 @@
 // Video: cihazda saklama (OPFS, 2 GB'a kadar), Gemini ile altyazı çıkarma, çeviri, SRT/VTT.
 import { z } from "zod";
-import { llmJson } from "./browserLLM";
+import { llmComplete, llmJson } from "./browserLLM";
 import { getSettings } from "./store";
 
 export const MAX_VIDEO = 2 * 1024 * 1024 * 1024; // 2 GB
@@ -384,6 +384,78 @@ export async function transcribe(
     for (const c of cues) if (c.e <= c.s) c.e = c.s + Math.max(1.5, c.t.length / 15);
     all.push(...cues);
     lang ||= data.lang || "";
+  }
+  all.sort((x, y) => x.s - y.s);
+  return { lang, cues: all };
+}
+
+/**
+ * Videoyu Gemini'nin OpenAI uyumlu ucundan yazıya döker (YouTube bağlantısı, uzak .mp4 ya da 14 MB'a kadar dosya).
+ * Bu yol, Gemini anahtarının her türüyle çalışır; uzun videolar 5 dakikalık bölümlerle işlenir.
+ */
+export const INLINE_MAX = 14 * 1024 * 1024;
+
+export async function fileToDataUrl(file: Blob): Promise<string> {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result));
+    fr.onerror = () => rej(fr.error);
+    fr.readAsDataURL(file);
+  });
+}
+
+export async function transcribeCompat(
+  videoUrl: string,
+  duration: number,
+  onProgress: (msg: string) => void,
+  signal?: AbortSignal,
+): Promise<{ lang: string; cues: Cue[] }> {
+  const STEP = 300;
+  const all: Cue[] = [];
+  let lang = "";
+  let total = duration;
+  for (let a = 0, k = 0; k < 60; a += STEP, k++) {
+    if (total && a >= total) break;
+    const b = a + STEP;
+    onProgress(`Altyazı çıkarılıyor: ${fmtTime(a)}–${fmtTime(total ? Math.min(b, total) : b)}${total ? ` (${k + 1}/${Math.ceil(total / STEP)})` : ""}`);
+    const text = await llmComplete(
+      [
+        {
+          role: "system",
+          content:
+            'You are a precise subtitle transcriber. Respond ONLY with JSON: {"lang": ISO 639-1 code of the main spoken language, "duration": total video length in seconds, "cues": [{"s": start seconds, "e": end seconds, "t": text}]}',
+        },
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: videoUrl } },
+            {
+              type: "text",
+              text: `Transcribe ALL speech (and sung lyrics) verbatim in the original spoken language, do not translate. Only the part between ${a} and ${b} seconds of the video. "s"/"e" are seconds from the START of the video. Max ~84 characters per cue; split longer sentences. If there is no speech in this part, return an empty cues array.`,
+            },
+          ],
+        },
+      ],
+      { response_format: { type: "json_object" } },
+      signal,
+    );
+    let data: { lang?: string; duration?: number; cues?: Cue[] };
+    try {
+      const body = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+      data = JSON.parse(body);
+    } catch {
+      throw new Error("Gemini geçerli altyazı üretmedi, tekrar dene.");
+    }
+    if (!total && data.duration && data.duration > 0) total = data.duration;
+    lang ||= data.lang || "";
+    const lastEnd = all.length ? all[all.length - 1].e : -1;
+    for (const raw of (data.cues || []) as (Cue & { text?: string; f?: string })[]) {
+      const c = { s: Number(raw.s), e: Number(raw.e), t: String(raw.t ?? raw.text ?? raw.f ?? "") };
+      if (!c.t.trim() || !Number.isFinite(c.s) || !Number.isFinite(c.e)) continue;
+      if (c.s < a - 1 || c.s >= b + 1 || c.s < lastEnd - 0.5) continue; // bölüm dışı ya da tekrar
+      all.push({ s: c.s, e: c.e > c.s ? c.e : c.s + Math.max(1.5, c.t.length / 15), t: c.t.trim() });
+    }
+    if (!total) break; // süre bilinmiyorsa tek seferde biter
   }
   all.sort((x, y) => x.s - y.s);
   return { lang, cues: all };

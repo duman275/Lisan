@@ -252,3 +252,10 @@ export async function listModels(baseUrl: string, key: string): Promise<string[]
   const d = (await r.json()) as { data?: { id: string }[] };
   return (d.data || []).map((m) => m.id.replace(/^models\//, "")).sort();
 }
+
+/** Ham sohbet isteği (görsel/video parçaları dahil); yanıt metnini döndürür. Gemini'de model yedekleme uygulanır. */
+export async function llmComplete(messages: unknown[], extra: Record<string, unknown> = {}, signal?: AbortSignal): Promise<string> {
+  const r = await post("/chat/completions", { messages, ...extra }, signal);
+  const d = (await r.json()) as { choices?: { message?: { content?: string } }[] };
+  return (d.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+}

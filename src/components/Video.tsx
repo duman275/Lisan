@@ -15,6 +15,9 @@ import {
   toSrt,
   toVtt,
   transcribe,
+  transcribeCompat,
+  fileToDataUrl,
+  INLINE_MAX,
   translateCues,
   uploadToGemini,
   downloadVideoUrl,
@@ -472,39 +475,48 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
     setErr("");
     const ctrl = new AbortController();
     abort.current = ctrl;
+    const duration = meta.duration || media?.duration || 0;
+    const done = async (r: { lang: string; cues: Cue[] }) => {
+      if (!r.cues.length) throw new Error("Videoda konuşma bulunamadı.");
+      await saveSubs("orig", r.cues, { spokenLang: r.lang });
+      setSub1("orig");
+      setBusy("");
+    };
     try {
-      let g: { uri: string; mime: string } | undefined =
-        meta.source?.kind === "youtube"
-          ? { uri: meta.source.url, mime: "" }
-          : meta.source?.kind === "remote"
-            ? { uri: meta.source.url, mime: "video/mp4" }
-            : meta.gemini && meta.gemini.expires > Date.now()
-              ? meta.gemini
-              : undefined;
+      // 1) YouTube ve uzak videolar: bağlantı doğrudan Gemini'ye verilir
+      if (meta.source?.kind === "youtube" || meta.source?.kind === "remote") {
+        setBusy("Gemini videoyu izliyor…");
+        return await done(await transcribeCompat(meta.source.url, duration, setBusy, ctrl.signal));
+      }
+      const f = await loadVideoFile(meta.id);
+      if (!f) throw new Error("Video dosyası bulunamadı.");
+      // 2) Küçük dosyalar: dosyanın kendisi gönderilir (her anahtar türüyle çalışır)
+      if (f.size <= INLINE_MAX) {
+        setBusy("Video hazırlanıyor…");
+        const dataUrl = await fileToDataUrl(new Blob([f], { type: f.type || "video/mp4" }));
+        return await done(await transcribeCompat(dataUrl, duration, setBusy, ctrl.signal));
+      }
+      // 3) Büyük dosyalar: Gemini dosya servisi (2 GB'a kadar)
+      let g = meta.gemini && meta.gemini.expires > Date.now() ? meta.gemini : undefined;
       if (!g) {
-        const f = await loadVideoFile(meta.id);
-        if (!f) throw new Error("Video dosyası bulunamadı.");
         setBusy("Gemini'ye yükleniyor… %0");
         const up = await uploadToGemini(f, (p) => setBusy(`Gemini'ye yükleniyor… %${p}${p === 100 ? " — işleniyor" : ""}`), ctrl.signal);
         const saved = { ...up, expires: Date.now() + 47 * 3600_000 };
         g = saved;
         await update((l) => l.map((x) => (x.id === meta.id ? { ...x, gemini: saved } : x)));
       }
-      const duration = meta.duration || media?.duration || 0;
-      const r = await transcribe(g, duration, (msg) => setBusy(msg), ctrl.signal);
-      if (!r.cues.length) throw new Error("Videoda konuşma bulunamadı.");
-      await saveSubs("orig", r.cues, { spokenLang: r.lang });
-      setSub1("orig");
-      setBusy("");
+      await done(await transcribe(g, duration, (msg) => setBusy(msg), ctrl.signal));
     } catch (e) {
       setBusy("");
-      if ((e as Error).name !== "AbortError")
-        setErr(
-          (e as Error).message +
-            (meta.source?.kind === "remote"
-              ? " — Bu video uzaktan oynatıldığı için Gemini'ye gönderilemiyor olabilir. Videoyu telefona kaydedip “Video seç” ile eklersen altyazı kesin çalışır."
-              : ""),
-        );
+      if ((e as Error).name === "AbortError") return;
+      const m = (e as Error).message;
+      setErr(
+        /anahtarı reddedildi|OAuth|401/.test(m)
+          ? `${m} — Anahtar türün büyük dosya yüklemeyi desteklemiyor. Çözüm: videoyu YouTube'a “liste dışı” olarak yükleyip bağlantısını ekle (2 GB ve uzun videolar sorunsuz çalışır) ya da 14 MB'tan küçük bir parça kullan.`
+          : /quota|kullanım sınırı|429/i.test(m)
+            ? `${m} — Gemini'nin ücretsiz günlük sınırı doldu; yarın tekrar dene ya da Ayarlar'dan başka bir model seç.`
+            : m,
+      );
     }
   }
 

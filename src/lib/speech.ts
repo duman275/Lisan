@@ -26,11 +26,73 @@ export function setListenHooks(before: () => void, after: () => void) {
   hooks.after = after;
 }
 
+// ---------- Mikrofon izni ----------
+
+export type MicState = "granted" | "denied" | "prompt" | "unsupported";
+let micGranted = false;
+
+export async function micState(): Promise<MicState> {
+  if (!navigator.mediaDevices?.getUserMedia) return "unsupported";
+  try {
+    const st = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    if (st.state === "granted") micGranted = true;
+    return st.state as MicState;
+  } catch {
+    return micGranted ? "granted" : "prompt";
+  }
+}
+
+/** Mikrofon iznini ister (izin penceresini açar); izin verilirse true. */
+export async function requestMic(): Promise<boolean> {
+  if (micGranted) return true;
+  if (!navigator.mediaDevices?.getUserMedia) return false;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    micGranted = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const MIC_HELP =
+  "Mikrofon izni kapalı. Açmak için: Chrome'da adres çubuğundaki simgeye (ya da ⋮ → ⓘ) dokun → İzinler/Site ayarları → Mikrofon → İzin ver. Uygulama (APK) kullanıyorsan ayrıca Android Ayarlar → Uygulamalar → Chrome → İzinler → Mikrofon → “Uygulama kullanılırken izin ver”.";
+
+const SR_ERRORS: Record<string, string> = {
+  "not-allowed": MIC_HELP,
+  "service-not-allowed": "Konuşma tanıma servisi kapalı. Android'de Google uygulamasının açık ve güncel olduğundan emin ol (Ayarlar → Uygulamalar → Google), ses dilinde Türkçe/İngilizce indirili olsun.",
+  "audio-capture": "Mikrofon kullanılamıyor (başka bir uygulama kullanıyor olabilir ya da mikrofon bulunamadı).",
+  network: "Konuşma tanıma için internet bağlantısı gerekli.",
+  "language-not-supported": "Bu dil için konuşma tanıma desteklenmiyor.",
+};
+
 export function listen(lang: string): { promise: Promise<string>; stop: () => void } {
   const C = ctor();
   if (!C) return { promise: Promise.reject(new Error("Tarayıcınız konuşma tanımayı desteklemiyor (Chrome/Edge önerilir).")), stop: () => {} };
+  // İlk kullanımda mikrofon izni istenir; sonra tanıma başlar
+  let stopped = false;
+  let rec: SR | null = null;
+  const ready = micGranted ? Promise.resolve(true) : requestMic();
+  const promise = ready.then((ok) => {
+    if (!ok) throw new Error(MIC_HELP);
+    if (stopped) return "";
+    const inner = startRecognition(C, lang, (r) => (rec = r));
+    return inner;
+  });
+  return {
+    promise,
+    stop: () => {
+      stopped = true;
+      rec?.stop();
+    },
+  };
+}
+
+function startRecognition(C: new () => SR, lang: string, onStart: (r: SR) => void): Promise<string> {
   hooks.before();
   const r = new C();
+  onStart(r);
   r.lang = lang;
   r.interimResults = false;
   r.maxAlternatives = 1;
@@ -43,7 +105,8 @@ export function listen(lang: string): { promise: Promise<string>; stop: () => vo
     };
     r.onerror = (e) => {
       if (e.error === "no-speech" || e.error === "aborted") return; // sessizlik: boş sonuç döner
-      reject(new Error(e.error === "not-allowed" ? "Mikrofon izni verilmedi." : `Tanıma hatası: ${e.error}`));
+      if (e.error === "not-allowed") micGranted = false;
+      reject(new Error(SR_ERRORS[e.error] || `Konuşma tanıma hatası: ${e.error}`));
     };
     r.onend = () => resolve(got);
   }).finally(() => setTimeout(() => hooks.after(), 300));
@@ -51,9 +114,9 @@ export function listen(lang: string): { promise: Promise<string>; stop: () => vo
     r.start();
   } catch (e) {
     hooks.after();
-    return { promise: Promise.reject(e as Error), stop: () => {} };
+    return Promise.reject(e as Error);
   }
-  return { promise, stop: () => r.stop() };
+  return promise;
 }
 
 /** Sürekli dinleme: her kesin sonuç için onText çağrılır. Tarayıcı oturumu kapatırsa yeniden başlatır. */
@@ -88,7 +151,8 @@ export function continuousListener(lang: string, onText: (t: string) => void) {
     start() {
       if (active) return;
       active = true;
-      start();
+      if (micGranted) start();
+      else void requestMic().then((ok) => (ok ? start() : (active = false)));
     },
     stop() {
       active = false;
