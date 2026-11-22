@@ -1,6 +1,6 @@
 // Sunucusuz (statik) mod: GitHub Pages gibi yerlerde, telefondan doğrudan çalışır.
 // Ücretsiz motor tarayıcıda çalışır; veriler sitenin data/ ve books/ klasörlerinden okunur.
-import { communityLinks, findBookPages, freeJsonTask, freeReady, initFreeData, NEEDS_LLM, wikiText } from "../../shared/freeCore";
+import { communityLinks, researchPages, freeJsonTask, freeReady, initFreeData, NEEDS_LLM, wikiText } from "../../shared/freeCore";
 import { buildJsonPrompt, buildStreamPrompt, type JsonRequest, type StreamRequest } from "../../shared/tasks";
 import { browserLlmReady, llmJson, llmStream } from "./browserLLM";
 import { getSettings } from "./store";
@@ -72,8 +72,8 @@ export async function staticStream(
     let extra = "";
     if (webResearch && body.title) {
       h.onStatus?.("Wikipedia'dan kaynak toplanıyor…");
-      const pages = await findBookPages(body.title as string, body.author as string | undefined).catch(() => []);
-      for (const pg of pages) sources.push({ url: pg.url, title: `Wikipedia (${pg.lang.toUpperCase()}): ${pg.title}` });
+      const pages = await researchPages(body.title as string, body.author as string | undefined, body.topic as string | undefined, body.sourceHints as string[] | undefined).catch(() => []);
+      for (const pg of pages) sources.push({ url: pg.url, title: `${pg.lang.length === 2 ? `Wikipedia (${pg.lang.toUpperCase()})` : pg.lang}: ${pg.title}` });
       sources.push(...communityLinks(body.title as string, body.author as string | undefined));
       sources.forEach((s) => h.onSource?.(s));
       extra = pages
@@ -96,7 +96,7 @@ export async function staticStream(
   const title = body.title as string | undefined;
   if ((task === "summary" || task === "analysis") && title && !(body.text as string | undefined)?.trim()) {
     h.onStatus?.("Wikipedia'dan derleniyor…");
-    const r = await wikiText(task, title, body.author as string | undefined);
+    const r = await wikiText(task, title, body.author as string | undefined, body.topic as string | undefined, body.sourceHints as string[] | undefined);
     r.sources.forEach((s) => h.onSource?.(s));
     let full = "";
     for (const part of r.text.split(/(?<=\n\n)/)) {
@@ -130,7 +130,7 @@ export async function staticGet(url: string): Promise<unknown> {
       agent: { claude: false, ollama: false, browser: phoneLlm(), ollamaModel: "", ollamaModels: [] },
     };
   }
-  const text = /^\/api\/books\/(\d+)\/text/.exec(url);
+  const text = /^\/api\/books\/([\w-]+)\/text/.exec(url);
   if (text) {
     // Katalogdaki telifsiz kitaplar siteyle birlikte gelir
     try {

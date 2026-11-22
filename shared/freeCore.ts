@@ -335,6 +335,60 @@ export async function findBookPages(title: string, author?: string): Promise<Wik
   return out;
 }
 
+/** Herhangi bir MediaWiki sitesinde (AWOIAF, Fandom) arayıp sayfa metnini getirir (parse API, HTML → metin). */
+export async function mediaWikiPage(apiBase: string, siteBase: string, label: string, query: string): Promise<WikiPage | null> {
+  try {
+    const su = new URL(apiBase);
+    su.search = new URLSearchParams({ action: "query", list: "search", srsearch: query, srlimit: "1", format: "json", origin: "*" }).toString();
+    const sr = await fetch(su, { headers: UA, signal: AbortSignal.timeout(12_000) });
+    if (!sr.ok) return null;
+    const title = ((await sr.json()) as { query?: { search?: { title: string }[] } }).query?.search?.[0]?.title;
+    if (!title) return null;
+    const pu = new URL(apiBase);
+    pu.search = new URLSearchParams({ action: "parse", page: title, prop: "text", redirects: "1", format: "json", formatversion: "2", origin: "*" }).toString();
+    const pr = await fetch(pu, { headers: UA, signal: AbortSignal.timeout(15_000) });
+    if (!pr.ok) return null;
+    const html = ((await pr.json()) as { parse?: { text?: string } }).parse?.text || "";
+    const text = html
+      .replace(/<(script|style|table|sup|figure|nav)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<h([2-4])[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, _l, h) => `\n== ${h.replace(/<[^>]+>/g, "").replace(/\[edit\]/gi, "").trim()} ==\n`)
+      .replace(/<\/(p|li|div)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#0?39;/g, "'")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n\s*\n+/g, "\n\n")
+      .trim();
+    if (text.length < 200) return null;
+    const sections: WikiPage["sections"] = [];
+    let cur = { heading: "", text: "" };
+    for (const line of text.split("\n")) {
+      const h = /^== (.+) ==$/.exec(line.trim());
+      if (h) {
+        if (cur.text.trim()) sections.push(cur);
+        cur = { heading: h[1], text: "" };
+      } else cur.text += line + "\n";
+    }
+    if (cur.text.trim()) sections.push(cur);
+    return { lang: label, title, url: `${siteBase}${encodeURIComponent(title.replace(/ /g, "_"))}`, sections };
+  } catch {
+    return null;
+  }
+}
+
+/** Analiz için kaynak sayfaları: Wikipedia + (ipuçlarında geçiyorsa) ASOIAF wikileri. */
+export async function researchPages(title: string, author?: string, topic?: string, hints?: string[]): Promise<WikiPage[]> {
+  const jobs: Promise<WikiPage[] | WikiPage | null>[] = [findBookPages(topic ? `${title} ${topic.replace(/\(.*\)/, "")}` : title, author).catch(() => [])];
+  const h = (hints || []).join(" ").toLowerCase();
+  const q = topic ? topic.replace(/^.*\((.+)\)$/, "$1") : title;
+  if (h.includes("awoiaf")) jobs.push(mediaWikiPage("https://awoiaf.westeros.org/api.php", "https://awoiaf.westeros.org/index.php/", "AWOIAF", q));
+  if (h.includes("fandom")) jobs.push(mediaWikiPage("https://gameofthrones.fandom.com/api.php", "https://gameofthrones.fandom.com/wiki/", "Fandom", q));
+  const out = await Promise.all(jobs);
+  return out.flat().filter((x): x is WikiPage => Boolean(x));
+}
+
 const SUMMARY_RE = /konu|özet|olay|hikâye|hikaye|içerik|plot|synopsis|summary|story/i;
 const ANALYSIS_RE = /tema|sembol|simge|motif|analiz|yorum|eleştiri|üslup|anlatım|alegori|uyarlama|etki|kabul|themes?|symbol|motif|analysis|interpretation|style|allegor|reception|adaptation|legacy|influence|critic/i;
 
@@ -351,20 +405,27 @@ export function communityLinks(title: string, author?: string) {
 }
 
 /** Wikipedia'dan özet veya analiz metni üretir (yapay zekâ olmadan). */
-export async function wikiText(kind: "summary" | "analysis", title: string, author?: string): Promise<{ text: string; sources: { url: string; title: string }[] }> {
-  const pages = await findBookPages(title, author);
+export async function wikiText(
+  kind: "summary" | "analysis",
+  title: string,
+  author?: string,
+  topic?: string,
+  hints?: string[],
+): Promise<{ text: string; sources: { url: string; title: string }[] }> {
+  const pages = topic ? await researchPages(title, author, topic, hints) : await findBookPages(title, author);
   if (!pages.length) throw new Error("Wikipedia'da bu kitap bulunamadı (ya da Wikipedia'ya erişilemedi).");
   const re = kind === "summary" ? SUMMARY_RE : ANALYSIS_RE;
   const parts: string[] = [];
   const sources: { url: string; title: string }[] = [];
   for (const p of pages) {
     const lead = p.sections[0]?.heading === "" ? p.sections[0] : null;
-    const picked = p.sections.filter((s) => s.heading && re.test(s.heading));
+    const isFan = p.lang.length > 2; // AWOIAF / Fandom
+    const picked = isFan ? p.sections.filter((s) => s.text.trim().length > 80).slice(0, 5) : p.sections.filter((s) => s.heading && re.test(s.heading));
     if (!lead && !picked.length) continue;
-    sources.push({ url: p.url, title: `Wikipedia (${p.lang.toUpperCase()}): ${p.title}` });
-    parts.push(`## ${p.title} — Wikipedia ${p.lang === "tr" ? "(Türkçe)" : "(İngilizce)"}`);
+    sources.push({ url: p.url, title: isFan ? `${p.lang}: ${p.title}` : `Wikipedia (${p.lang.toUpperCase()}): ${p.title}` });
+    parts.push(`## ${p.title} — ${isFan ? p.lang : `Wikipedia ${p.lang === "tr" ? "(Türkçe)" : "(İngilizce)"}`}`);
     if (lead && (kind === "summary" || !picked.length)) parts.push(clipText(lead.text, 1500));
-    for (const s of picked.slice(0, 5)) parts.push(`### ${s.heading}\n${clipText(s.text, kind === "summary" ? 5000 : 3000)}`);
+    for (const s of picked.slice(0, 5)) parts.push(`${s.heading ? `### ${s.heading}\n` : ""}${clipText(s.text, kind === "summary" ? 5000 : 3000)}`);
     if (kind === "summary" && p.lang === "tr" && picked.length) break; // Türkçe özet yeterli
   }
   if (!parts.length) throw new Error("Wikipedia sayfasında uygun bölüm bulunamadı.");

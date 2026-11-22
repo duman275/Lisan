@@ -30,6 +30,13 @@ export async function openGutenberg(id: number, fallback?: { title?: string; aut
   return itemId;
 }
 
+/** Siteyle birlikte gelen Türkçe tam kitabı (Vikikaynak) kütüphaneye ekleyip açar. */
+export async function openBundled(id: string, fallback: { title: string; author: string }): Promise<string> {
+  const b = await getJSON<{ title: string; author: string; lang: string; text: string }>(`/api/books/${id}/text`);
+  await saveItem({ id, title: fallback.title || b.title, author: fallback.author || b.author, lang: toBcp47(b.lang), kind: "gutenberg", text: b.text, added: Date.now(), position: 0 });
+  return id;
+}
+
 export function Library() {
   const { route, go } = useNav();
   const items = useLibrary();

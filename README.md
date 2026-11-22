@@ -10,6 +10,14 @@ Telefondaki sürüm sunucusuzdur ve tamamen ücretsizdir: İngilizce dersler (11
 
 Site, `main` dalına her gönderimde GitHub Actions ile otomatik derlenir (`.github/workflows/pages.yml`).
 
+### 🔊 Sesler ve tam kitap dinleme
+- **Nöral sesler (ücretsiz, cihazda):** Piper modelleri; Türkçe ♂ Fahrettin, Fettah, DFKI; İngilizce ♀ Amy, Kristin, Jenny, Alba… ♂ Ryan, Joe, Alan…; Almanca, Fransızca, Rusça ve diğerleri. İlk kullanımda bir kez indirilir, sonra internetsiz çalışır ve **ekran kapalıyken de kitabı baştan sona okur**.
+- **Kadın / Erkek** seçimi okuyucuda ve Ayarlar'da; podcast'te sunucu A kadın, B erkek sesidir.
+- **Türkçe tam kitaplar:** telif süresi dolmuş Türk klasikleri Vikikaynak'tan (Efsaneler → Türk Edebiyatı → “Türkçe tam metin”).
+
+### 🐺🐉 Buz ve Ateşin Şarkısı evreni
+Efsaneler sekmesinde: 5 kitap, Kış Rüzgârları'nın açıklanan bölümleri, yan kitaplar (Ateş ve Kan, Dunk ve Egg…), diziler, yazar söyleşileri, semboller, temalar ve teoriler. Her konudan A Wiki of Ice and Fire, Fandom, r/asoiaf, So Spake Martin ve YouTube kanallarına (Geek Teori, Karakare, Legendarium Türkiye, 40ip, Argümento, Umur Tezer, Alt Shift X, History of Westeros…) bağlantılar ve bu kaynakları kullanan derin analiz.
+
 ## Ücretsiz kullanım — API anahtarı gerekmez
 
 Lisan üç kademeli çalışır ve hangisinin kullanılacağını Ayarlar → **Yapay zekâ kaynağı**'ndan seçersin:

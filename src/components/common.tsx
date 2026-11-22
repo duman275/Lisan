@@ -11,7 +11,8 @@ export type Tab = "learn" | "library" | "catalog" | "summary" | "analysis" | "se
 export interface Route {
   tab: Tab;
   readerId?: string;
-  prefill?: { title?: string; author?: string; text?: string; auto?: boolean; mode?: string };
+  prefill?: { title?: string; author?: string; text?: string; auto?: boolean; mode?: string; topic?: string; hints?: string[] };
+  universe?: string;
   learnSub?: string;
   course?: { course: string; unit?: number };
   autoplay?: boolean;

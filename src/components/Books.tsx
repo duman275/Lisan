@@ -3,12 +3,39 @@ import { useLibrary, useSettings } from "../lib/store";
 import { nativeCode } from "../lib/tts";
 import { CATALOG, type CatalogBook } from "../data/catalog";
 import { AiNotice, AiOutput, useHealth, useNav, useStream } from "./common";
-import { openGutenberg } from "./Library";
+import { openBundled, openGutenberg } from "./Library";
+import { Universe } from "./Universe";
 
 // ---------- Efsane kitaplar kataloğu ----------
 
 export function Catalog() {
+  const { go, route } = useNav();
+  if (route.universe === "asoiaf") return <Universe onBack={() => go({ tab: "catalog" })} />;
+  return <CatalogList />;
+}
+
+interface TrBook {
+  id: string;
+  title: string;
+  author: string;
+  chars: number;
+  source: string;
+}
+
+function useTrBooks() {
+  const [list, setList] = useState<TrBook[]>([]);
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}books/tr-index.json`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((x) => Array.isArray(x) && setList(x))
+      .catch(() => {});
+  }, []);
+  return list;
+}
+
+function CatalogList() {
   const { go } = useNav();
+  const trBooks = useTrBooks();
   const [cat, setCat] = useState(CATALOG[0].id);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -46,6 +73,17 @@ export function Catalog() {
         <input placeholder="Katalogda ara: kitap ya da yazar…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       {!q && (
+        <button className="card universe-card" onClick={() => go({ tab: "catalog", universe: "asoiaf" })}>
+          <span className="big-icon">🐺🐉</span>
+          <span>
+            <strong>Buz ve Ateşin Şarkısı Evreni</strong>
+            <span className="muted small">
+              5 kitap, Kış Rüzgârları bölümleri, yan kitaplar, diziler, yazar söyleşileri, semboller, temalar, teoriler ve YouTube kanalları
+            </span>
+          </span>
+        </button>
+      )}
+      {!q && (
         <div className="cats">
           {CATALOG.map((c) => (
             <button key={c.id} className={`cat ${c.id === cat ? "on" : ""}`} onClick={() => setCat(c.id)}>
@@ -55,6 +93,38 @@ export function Catalog() {
         </div>
       )}
       {err && <div className="error">{err}</div>}
+      {!q && cat === "turk" && trBooks.length > 0 && (
+        <div className="card">
+          <h3>🎧 Türkçe tam metin — baştan sona dinle</h3>
+          <p className="muted small">Telif süresi dolmuş Türk klasikleri (Vikikaynak). Kitabı aç, “Sesli dinle”ye bas; nöral seslerle ekran kapalıyken de okur.</p>
+          <div className="hits">
+            {trBooks.map((b) => (
+              <button
+                key={b.id}
+                className="hit"
+                disabled={busy === b.id}
+                onClick={async () => {
+                  if (lib.some((x) => x.id === b.id)) return go({ tab: "library", readerId: b.id });
+                  setBusy(b.id);
+                  setErr("");
+                  try {
+                    go({ tab: "library", readerId: await openBundled(b.id, b) });
+                  } catch (e) {
+                    setErr(`${b.title}: ${(e as Error).message}`);
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                <strong>{b.title}</strong>
+                <span className="muted small">
+                  {b.author} · ≈{Math.max(1, Math.round(b.chars / 6 / 160 / 60))} saat dinleme
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="books">
         {list.map((b) => (
           <div key={b.title + b.author} className="book card">
@@ -167,15 +237,18 @@ export function Analysis() {
   const [passage, setPassage] = useState(route.prefill?.text || "");
   const [focus, setFocus] = useState<string[]>(FOCUS.slice(0, 3).map((f) => f.id).concat(FOCUS[4].id, FOCUS[6].id, FOCUS[7].id));
 
-  const run = (t = title, a = author) =>
-    s.run({ task: "analysis", title: t, author: a, focus, text: passage || undefined, nativeLang: settings.nativeLang });
+  const [topic, setTopic] = useState(route.prefill?.topic || "");
+  const hints = route.prefill?.hints;
+  const run = (t = title, a = author, tp = topic) =>
+    s.run({ task: "analysis", title: t, author: a, topic: tp || undefined, sourceHints: hints, focus, text: passage || undefined, nativeLang: settings.nativeLang });
 
   useEffect(() => {
     if (route.prefill) {
       setTitle(route.prefill.title || "");
       setAuthor(route.prefill.author || "");
       setPassage(route.prefill.text || "");
-      if (route.prefill.auto && route.prefill.title && health.ai) void run(route.prefill.title, route.prefill.author || "");
+      setTopic(route.prefill.topic || "");
+      if (route.prefill.auto && route.prefill.title && health.ai) void run(route.prefill.title, route.prefill.author || "", route.prefill.topic || "");
     }
   }, [route.prefill, health.ai]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -192,6 +265,7 @@ export function Analysis() {
           <div className="row wrap">
             <input placeholder="Kitap / roman adı" value={title} onChange={(e) => setTitle(e.target.value)} />
             <input placeholder="Yazar" value={author} onChange={(e) => setAuthor(e.target.value)} />
+            <input placeholder="Konu (isteğe bağlı): ör. kurt sembolizmi, R+L=J" value={topic} onChange={(e) => setTopic(e.target.value)} />
           </div>
           <div className="chips">
             {FOCUS.map((f) => (
@@ -215,7 +289,7 @@ export function Analysis() {
           </div>
         </form>
       </div>
-      <AiOutput s={s} title={`${title} — analiz`} kind="analysis" lang={nativeCode(settings.nativeLang)} />
+      <AiOutput s={s} title={`${title}${topic ? ` — ${topic}` : ""} — analiz`} kind="analysis" lang={nativeCode(settings.nativeLang)} />
     </div>
   );
 }

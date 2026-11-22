@@ -21,6 +21,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 function parseHash(): Route {
   const [tab, id] = location.hash.replace(/^#\/?/, "").split("/");
   const t = TABS.some((x) => x.id === tab) ? (tab as Tab) : "learn";
+  if (t === "catalog" && id) return { tab: t, universe: id };
   return t === "library" && id ? { tab: t, readerId: decodeURIComponent(id) } : t === "learn" && id ? { tab: t, learnSub: id } : { tab: t };
 }
 
@@ -49,7 +50,7 @@ export default function App() {
 
   const go = (r: Route) => {
     setRoute(r);
-    const hash = `#/${r.tab}${r.readerId ? `/${encodeURIComponent(r.readerId)}` : r.learnSub ? `/${r.learnSub}` : ""}`;
+    const hash = `#/${r.tab}${r.readerId ? `/${encodeURIComponent(r.readerId)}` : r.learnSub ? `/${r.learnSub}` : r.universe ? `/${r.universe}` : ""}`;
     if (location.hash !== hash) history.pushState(null, "", hash);
     window.scrollTo({ top: 0 });
   };

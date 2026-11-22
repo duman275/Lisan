@@ -17,6 +17,8 @@ export interface StreamRequest {
   mode?: string;
   focus?: string[];
   text?: string;
+  /** Analizde öncelikli kaynaklar (ör. ASOIAF wiki, söyleşiler, YouTube kanalları) */
+  sourceHints?: string[];
   provider?: string;
 }
 
@@ -82,7 +84,9 @@ export function buildStreamPrompt(req: StreamRequest): {
         messages: [
           {
             role: "user",
-            content: `Analyze "${req.title}"${req.author ? ` by ${req.author}` : ""}. Focus on: ${focus}.${
+            content: `Analyze "${req.title}"${req.author ? ` by ${req.author}` : ""}${req.topic ? `, specifically this topic: ${req.topic}` : ""}. Focus on: ${focus}.${
+              req.sourceHints?.length ? `\n\nPrefer and cite these sources where relevant: ${req.sourceHints.join("; ")}.` : ""
+            }${
               req.text ? `\n\nPassage from the book to anchor the analysis:\n<passage>\n${clip(req.text, 40_000)}\n</passage>` : ""
             }\n\nWrite the analysis in ${native}.`,
           },

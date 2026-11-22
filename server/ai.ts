@@ -4,7 +4,7 @@ import type { Response } from "express";
 import { z } from "zod";
 import { buildJsonPrompt, buildStreamPrompt, type Effort, type JsonRequest, type StreamRequest } from "../shared/tasks.ts";
 export type { JsonRequest, StreamRequest };
-import { communityLinks, findBookPages, freeAvailable, freeJsonTask, NEEDS_LLM, wikiText } from "./free.ts";
+import { communityLinks, researchPages, freeAvailable, freeJsonTask, NEEDS_LLM, wikiText } from "./free.ts";
 import { checkOllama, ollamaJson, ollamaStream, type OllamaMessage } from "./ollama.ts";
 
 export const MODEL = process.env.LISAN_MODEL || "claude-opus-5-5";
@@ -55,7 +55,7 @@ export async function streamTask(req: StreamRequest, res: Response) {
     if (engine === "free") {
       if ((req.task === "summary" || req.task === "analysis") && req.title && !req.text?.trim().length) {
         sse(res, { type: "status", text: "Wikipedia'dan derleniyor…" });
-        const r = await wikiText(req.task, req.title, req.author);
+        const r = await wikiText(req.task, req.title, req.author, req.topic, req.sourceHints);
         for (const src of r.sources) sse(res, { type: "source", ...src });
         // Okuma hissi için paragraf paragraf gönder
         for (const part of r.text.split(/(?<=\n\n)/)) {
@@ -81,8 +81,8 @@ export async function streamTask(req: StreamRequest, res: Response) {
       if (req.task === "analysis" && req.title) {
         // Web araması yerine: Wikipedia sayfalarını bağlam olarak ver
         sse(res, { type: "status", text: "Wikipedia'dan kaynak toplanıyor…" });
-        const pages = await findBookPages(req.title, req.author).catch(() => []);
-        for (const pg of pages) sse(res, { type: "source", url: pg.url, title: `Wikipedia (${pg.lang.toUpperCase()}): ${pg.title}` });
+        const pages = await researchPages(req.title, req.author, req.topic, req.sourceHints).catch(() => []);
+        for (const pg of pages) sse(res, { type: "source", url: pg.url, title: `${pg.lang.length === 2 ? `Wikipedia (${pg.lang.toUpperCase()})` : pg.lang}: ${pg.title}` });
         for (const l of communityLinks(req.title, req.author)) sse(res, { type: "source", ...l });
         extra = pages
           .map((pg) => `<source url="${pg.url}">\n${pg.sections.map((x) => (x.heading ? `## ${x.heading}\n` : "") + x.text).join("\n").slice(0, 12000)}\n</source>`)

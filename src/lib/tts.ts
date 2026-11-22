@@ -1,6 +1,7 @@
 // Tarayıcının Web Speech API'si üzerine kurulu anlatıcı: cümle cümle seslendirir, vurgular,
 // duraklat/devam, ileri/geri, uyku zamanlayıcısı ve çok sesli (podcast) oynatma destekler.
 import { useEffect, useState } from "react";
+import { deviceGender, NEURAL_PREFIX, NEURAL_VOICES, neuralFor } from "./voices";
 
 export interface Segment {
   text: string;
@@ -19,6 +20,7 @@ export interface NarratorState {
   title: string;
   sleepAt: number | null;
   ownerId: string | null;
+  loading?: string; // nöral ses modeli indirilirken durum
 }
 
 export const VOICE_PRESETS = [
@@ -32,6 +34,11 @@ export const VOICE_PRESETS = [
 
 const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
 
+/** Nöral sesi (Piper) cihazda üretir; ilk kullanımda model bir kez indirilir. */
+type Vits = typeof import("@diffusionstudio/vits-web");
+let vitsMod: Promise<Vits> | null = null;
+const loadVits = () => (vitsMod ??= import("@diffusionstudio/vits-web"));
+
 class Narrator {
   private segs: Segment[] = [];
   private onIndex?: (i: number) => void;
@@ -39,11 +46,20 @@ class Narrator {
   private token = 0;
   private sleepTimer: number | null = null;
   private subs = new Set<() => void>();
-  defaults = { rate: 1, pitch: 1, voiceURI: undefined as string | undefined };
-  state: NarratorState = { playing: false, paused: false, index: 0, total: 0, title: "", sleepAt: null, ownerId: null };
+  private audio: HTMLAudioElement | null = null;
+  private clips = new Map<string, Promise<string>>(); // "i|ses" → nesne URL'si
+  private neuralFailed = false; // nöral ses yüklenemediyse bu oturumda cihaz sesine geç
+  defaults = {
+    rate: 1,
+    pitch: 1,
+    voiceURI: undefined as string | undefined,
+    voiceByLang: {} as Record<string, string>,
+    gender: "auto" as "auto" | "f" | "m",
+  };
+  state: NarratorState = { playing: false, paused: false, index: 0, total: 0, title: "", sleepAt: null, ownerId: null, loading: "" };
 
   supported() {
-    return Boolean(synth);
+    return Boolean(synth) || typeof Audio !== "undefined";
   }
 
   subscribe(fn: () => void) {
@@ -56,27 +72,128 @@ class Narrator {
   }
 
   play(segs: Segment[], opts: { start?: number; title?: string; ownerId?: string; onIndex?: (i: number) => void; onEnd?: () => void } = {}) {
-    if (!synth) return;
     this.stop(false);
     this.segs = segs;
     this.onIndex = opts.onIndex;
     this.onEnd = opts.onEnd;
     this.emit({ title: opts.title || "", total: segs.length, ownerId: opts.ownerId || null });
+    if ("mediaSession" in navigator && typeof MediaMetadata !== "undefined") {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: opts.title || "Lisan",
+        artist: "Lisan",
+        artwork: [{ src: `${import.meta.env.BASE_URL}icon-512.png`, sizes: "512x512", type: "image/png" }],
+      });
+    }
     this.speakFrom(opts.start || 0);
   }
 
+  /** Bu parça hangi sesle okunacak? (açık seçim → dile özel tercih → cinsiyet tercihi → otomatik) */
+  voiceFor(s: Segment): string | undefined {
+    const lang2 = (s.lang || "").slice(0, 2).toLowerCase();
+    const explicit = s.voiceURI || this.defaults.voiceByLang[lang2] || this.defaults.voiceURI;
+    if (explicit && !(this.neuralFailed && explicit.startsWith(NEURAL_PREFIX))) {
+      if (explicit.startsWith(NEURAL_PREFIX)) {
+        const nv = NEURAL_VOICES.find((v) => NEURAL_PREFIX + v.id === explicit);
+        if (nv && (!lang2 || nv.lang === lang2)) return explicit;
+      } else {
+        const dv = findVoice(explicit, s.lang);
+        if (dv?.voiceURI === explicit) return explicit;
+      }
+    }
+    const g = this.defaults.gender;
+    if (g === "auto" || !lang2) return undefined;
+    const device = (voiceCache.length ? voiceCache : loadVoices()).filter((v) => v.lang.toLowerCase().startsWith(lang2));
+    const dMatch = device.find((v) => deviceGender(v) === g);
+    const nMatch = neuralFor(lang2).find((v) => v.gender === g);
+    if (this.neuralFailed) return dMatch?.voiceURI;
+    if (g === "m") return nMatch ? NEURAL_PREFIX + nMatch.id : dMatch?.voiceURI;
+    return dMatch?.voiceURI || (nMatch ? NEURAL_PREFIX + nMatch.id : undefined);
+  }
+
+  private clip(i: number, voiceId: string): Promise<string> {
+    const key = `${i}|${voiceId}`;
+    let c = this.clips.get(key);
+    if (!c) {
+      const text = this.segs[i].text;
+      c = loadVits()
+        .then((t) =>
+          t.predict({ text, voiceId: voiceId as Parameters<Vits["predict"]>[0]["voiceId"] }, (p) => {
+            if (p.total) this.emit({ loading: `Ses modeli indiriliyor… %${Math.round((p.loaded / p.total) * 100)} (bir kez)` });
+          }),
+        )
+        .then((blob) => URL.createObjectURL(blob));
+      c.catch(() => this.clips.delete(key));
+      this.clips.set(key, c);
+    }
+    return c;
+  }
+
+  private clearClips() {
+    for (const c of this.clips.values()) c.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+    this.clips.clear();
+  }
+
   private speakFrom(i: number) {
-    if (!synth) return;
     const my = ++this.token;
-    synth.cancel();
+    synth?.cancel();
+    this.audio?.pause();
     if (i >= this.segs.length) {
-      this.emit({ playing: false, paused: false, index: Math.max(0, this.segs.length - 1) });
+      this.emit({ playing: false, paused: false, index: Math.max(0, this.segs.length - 1), loading: "" });
       this.onEnd?.();
       return;
     }
     const s = this.segs[i];
+    const vid = this.voiceFor(s);
+    this.emit({ playing: true, paused: false, index: i });
+    this.onIndex?.(i);
+
+    // --- Nöral ses: ses dosyası olarak çalar (ekran kapalıyken de devam eder) ---
+    if (vid?.startsWith(NEURAL_PREFIX)) {
+      const voiceId = vid.slice(NEURAL_PREFIX.length);
+      // Sonraki cümleleri önceden hazırla
+      for (let k = i + 1; k <= Math.min(i + 3, this.segs.length - 1); k++) if (this.voiceFor(this.segs[k]) === vid) void this.clip(k, voiceId);
+      // Eski klipleri bırak
+      for (const key of [...this.clips.keys()]) {
+        const n = Number(key.split("|")[0]);
+        if (n < i - 1) {
+          this.clips.get(key)!.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+          this.clips.delete(key);
+        }
+      }
+      this.clip(i, voiceId)
+        .then((url) => {
+          if (my !== this.token) return;
+          if (this.state.loading) this.emit({ loading: "" });
+          const a = (this.audio ??= new Audio());
+          a.src = url;
+          a.playbackRate = Math.min(2, Math.max(0.5, (s.rate ?? 1) * this.defaults.rate));
+          a.onended = () => {
+            if (my === this.token) this.speakFrom(i + 1);
+          };
+          a.onerror = () => {
+            if (my === this.token) this.speakFrom(i + 1);
+          };
+          a.play().catch(() => {
+            if (my === this.token) this.emit({ playing: false, paused: true });
+          });
+        })
+        .catch((e) => {
+          if (my !== this.token) return;
+          // Nöral ses yüklenemezse cihaz sesine düş (bu oturum boyunca)
+          this.neuralFailed = true;
+          this.emit({ loading: `Nöral ses yüklenemedi (${(e as Error).message}); cihaz sesi kullanılıyor.` });
+          this.speakDevice(i, my, undefined);
+        });
+      return;
+    }
+    this.speakDevice(i, my, vid);
+  }
+
+  private speakDevice(i: number, my: number, vid: string | undefined) {
+    if (!synth) return;
+    const s = this.segs[i];
     const u = new SpeechSynthesisUtterance(s.text);
-    const voice = findVoice(s.voiceURI || this.defaults.voiceURI, s.lang);
+    const voice = findVoice(vid, s.lang);
     if (voice) u.voice = voice;
     u.lang = voice?.lang || s.lang || "";
     u.rate = (s.rate ?? 1) * this.defaults.rate;
@@ -89,15 +206,14 @@ class Narrator {
       if (e.error === "interrupted" || e.error === "canceled") return;
       this.speakFrom(i + 1);
     };
-    this.emit({ playing: true, paused: false, index: i });
-    this.onIndex?.(i);
     synth.speak(u);
   }
 
   pause() {
-    if (!synth || !this.state.playing) return;
-    this.token++; // devam eden cümlenin onend'i ilerletmesin
-    synth.cancel();
+    if (!this.state.playing) return;
+    this.token++; // devam eden cümlenin bitişi ilerletmesin
+    synth?.cancel();
+    this.audio?.pause();
     this.emit({ playing: false, paused: true });
   }
   resume() {
@@ -119,8 +235,10 @@ class Narrator {
   stop(emit = true) {
     this.token++;
     synth?.cancel();
+    this.audio?.pause();
+    this.clearClips();
     this.setSleep(null);
-    if (emit) this.emit({ playing: false, paused: false, ownerId: null, total: 0, title: "" });
+    if (emit) this.emit({ playing: false, paused: false, ownerId: null, total: 0, title: "", loading: "" });
   }
   setSleep(minutes: number | null) {
     if (this.sleepTimer) window.clearTimeout(this.sleepTimer);
@@ -132,16 +250,48 @@ class Narrator {
   }
   /** Tek seferlik kısa seslendirme (kelime, cümle) */
   say(text: string, lang?: string, rate = 1, voiceURI?: string) {
+    if (this.state.playing) this.pause();
+    const vid = this.voiceFor({ text, lang, voiceURI });
+    if (vid?.startsWith(NEURAL_PREFIX)) {
+      this.token++;
+      synth?.cancel();
+      loadVits()
+        .then((t) => t.predict({ text, voiceId: vid.slice(NEURAL_PREFIX.length) as Parameters<Vits["predict"]>[0]["voiceId"] }))
+        .then((blob) => {
+          const a = (this.audio ??= new Audio());
+          a.onended = null;
+          a.src = URL.createObjectURL(blob);
+          a.playbackRate = rate;
+          void a.play();
+        })
+        .catch(() => this.sayDevice(text, lang, rate, undefined));
+      return;
+    }
+    this.sayDevice(text, lang, rate, vid);
+  }
+  private sayDevice(text: string, lang: string | undefined, rate: number, vid: string | undefined) {
     if (!synth) return;
     this.token++;
     synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    const v = findVoice(voiceURI || this.defaults.voiceURI, lang);
+    const v = findVoice(vid, lang);
     if (v) u.voice = v;
     u.lang = v?.lang || lang || "";
     u.rate = rate;
     synth.speak(u);
-    if (this.state.playing) this.emit({ playing: false, paused: true });
+  }
+  /** Bir nöral sesi önceden indirir (Ayarlar'dan). */
+  async downloadVoice(id: string, onProgress: (pct: number) => void) {
+    this.neuralFailed = false;
+    const t = await loadVits();
+    await t.download(id as Parameters<Vits["download"]>[0], (p) => p.total && onProgress(Math.round((p.loaded / p.total) * 100)));
+  }
+  async storedVoices(): Promise<string[]> {
+    try {
+      return (await (await loadVits()).stored()) as string[];
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -208,4 +358,14 @@ export function toBcp47(code?: string): string {
 const NATIVE_CODES: Record<string, string> = { Türkçe: "tr-TR", English: "en-US", Deutsch: "de-DE" };
 export function nativeCode(name: string) {
   return NATIVE_CODES[name] || "tr-TR";
+}
+
+/** Dil ve cinsiyete göre bir ses seçer (önce cihaz kadın sesi / nöral erkek sesi). */
+export function pickVoiceByGender(lang: string, g: "f" | "m"): string | undefined {
+  const lang2 = lang.slice(0, 2).toLowerCase();
+  const device = (voiceCache.length ? voiceCache : loadVoices()).filter((v) => v.lang.toLowerCase().startsWith(lang2));
+  const d = device.find((v) => deviceGender(v) === g);
+  const n = neuralFor(lang2).find((v) => v.gender === g);
+  if (g === "m") return n ? NEURAL_PREFIX + n.id : d?.voiceURI;
+  return d?.voiceURI || (n ? NEURAL_PREFIX + n.id : device[0]?.voiceURI);
 }

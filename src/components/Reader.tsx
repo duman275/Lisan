@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { jsonAI } from "../lib/api";
 import { loadItem, savePosition, useSettings, type LibraryItem } from "../lib/store";
 import { splitSentences } from "../lib/text";
-import { narrator, nativeCode, useNarrator, useVoices, VOICE_PRESETS, type Segment } from "../lib/tts";
+import { narrator, nativeCode, pickVoiceByGender, useNarrator, useVoices, VOICE_PRESETS, type Segment } from "../lib/tts";
 import { LANGUAGES } from "../data/languages";
 import { AiOutput, useLLM, useNav, useStream } from "./common";
 import { Clickable, WordPopup, type WordTarget } from "./WordPopup";
+import { VoicePicker } from "./VoicePicker";
 
 const PAGE = 40; // sayfa başına cümle
 
@@ -47,7 +48,6 @@ function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }
   const [podErr, setPodErr] = useState("");
   const [podBusy, setPodBusy] = useState(false);
   const explain = useStream();
-  const voices = useVoices(lang);
   const nativeVoices = useVoices(nativeCode(settings.nativeLang));
   const mine = n.ownerId === item.id;
   const lastSaved = useRef(0);
@@ -103,8 +103,9 @@ function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }
 
   function playPodcast(p: Podcast) {
     const nl = nativeCode(settings.nativeLang);
-    const a = settings.podcastVoiceA || nativeVoices[0]?.voiceURI;
-    const b = settings.podcastVoiceB || nativeVoices[1]?.voiceURI || a;
+    // Sunucu A kadın, sunucu B erkek sesi (Ayarlar'dan değiştirilebilir)
+    const a = settings.podcastVoiceA || pickVoiceByGender(nl, "f") || nativeVoices[0]?.voiceURI;
+    const b = settings.podcastVoiceB || pickVoiceByGender(nl, "m") || nativeVoices[1]?.voiceURI || a;
     const sameVoice = a === b;
     narrator.play(
       p.turns.map((t) => ({
@@ -140,16 +141,7 @@ function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }
               <option key={l.code} value={l.code}>{l.flag} {l.label}</option>
             ))}
           </select>
-          <select
-            value={voices.some((v) => v.voiceURI === settings.voiceURI) ? settings.voiceURI : ""}
-            onChange={(e) => setSettings((s) => ({ ...s, voiceURI: e.target.value || undefined }))}
-            aria-label="Ses"
-          >
-            <option value="">Otomatik ses</option>
-            {voices.map((v) => (
-              <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
-            ))}
-          </select>
+          <VoicePicker lang={lang} compact />
           <select
             onChange={(e) => {
               const p = VOICE_PRESETS.find((x) => x.id === e.target.value);
@@ -170,6 +162,10 @@ function ReaderInner({ item, onBack }: { item: LibraryItem; onBack: () => void }
           <button className="icon" onClick={() => setFontSize((f) => Math.max(14, f - 1))} aria-label="Yazıyı küçült">A−</button>
           <button className="icon" onClick={() => setFontSize((f) => Math.min(28, f + 1))} aria-label="Yazıyı büyüt">A+</button>
         </div>
+        <details className="voice-box">
+          <summary>🔊 Ses: kadın / erkek, nöral sesler, dene</summary>
+          <VoicePicker lang={lang} />
+        </details>
         <div className="toolbar">
           <button
             className="btn"

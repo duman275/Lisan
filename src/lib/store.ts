@@ -53,6 +53,8 @@ export interface Settings {
   nativeLang: string; // ör. Türkçe
   levels: Record<string, string>; // dil kodu → CEFR
   voiceURI?: string;
+  voiceByLang: Record<string, string>; // dil (tr, en…) → seçili ses ("piper:…" nöral ya da cihaz sesi)
+  voiceGender: "auto" | "f" | "m";
   rate: number;
   pitch: number;
   podcastVoiceA?: string;
@@ -73,6 +75,8 @@ export const DEFAULT_SETTINGS: Settings = {
   targetLang: "en-US",
   nativeLang: "Türkçe",
   levels: {},
+  voiceByLang: {},
+  voiceGender: "auto",
   rate: 1,
   pitch: 1,
   dailyGoal: 45,

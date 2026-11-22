@@ -27,11 +27,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: public/books
-          key: books-${{ hashFiles('src/data/catalog.ts') }}
+          key: books-${{ hashFiles('src/data/catalog.ts', 'scripts/fetch-tr-books.mjs') }}
           restore-keys: books-
       - name: Telifsiz kitapları indir (Project Gutenberg)
         run: node scripts/fetch-books.mjs
         timeout-minutes: 6
+        continue-on-error: true
+      - name: Türkçe tam kitapları indir (Vikikaynak)
+        run: node scripts/fetch-tr-books.mjs
+        timeout-minutes: 8
         continue-on-error: true
       - name: Ücretsiz veriyi siteye kopyala
         run: mkdir -p public/data && cp data/*.gz public/data/

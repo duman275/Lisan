@@ -14,7 +14,9 @@ export function Player() {
     narrator.defaults.rate = settings.rate;
     narrator.defaults.pitch = settings.pitch;
     narrator.defaults.voiceURI = settings.voiceURI;
-  }, [settings.rate, settings.pitch, settings.voiceURI]);
+    narrator.defaults.voiceByLang = settings.voiceByLang || {};
+    narrator.defaults.gender = settings.voiceGender || "auto";
+  }, [settings.rate, settings.pitch, settings.voiceURI, settings.voiceByLang, settings.voiceGender]);
 
   useEffect(() => {
     if (!n.sleepAt) return;
@@ -52,6 +54,7 @@ export function Player() {
         <div className="player-title" title={n.title}>
           <strong>{n.title || "Dinleniyor"}</strong>
           <span className="muted">
+            {n.loading ? `${n.loading} · ` : ""}
             {n.index + 1} / {n.total}
             {sleepLeft !== null && ` · 🌙 ${sleepLeft} dk`}
           </span>

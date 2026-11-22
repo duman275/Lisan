@@ -311,3 +311,18 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
   .fab { width: 46px; height: 46px; }
   .assistant { right: 12px; left: 12px; width: auto; margin-right: 0; top: 64px; bottom: auto; max-height: calc(100vh - 300px); }
 }
+
+/* ---------- Ses seçimi & evren ---------- */
+.voice-box { margin-top: 10px; }
+.voice-box > summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; }
+.voice-box > .stack { margin-top: 8px; }
+.universe-card { display: flex; gap: 14px; align-items: center; text-align: left; cursor: pointer; font: inherit; color: inherit; border-color: var(--accent); background: linear-gradient(135deg, var(--accent-soft), var(--surface)); }
+.universe-card > span:last-child { display: flex; flex-direction: column; gap: 4px; }
+.universe-hero { background: linear-gradient(135deg, var(--accent-soft), var(--surface)); }
+.topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.topic { display: flex; flex-direction: column; gap: 8px; }
+.topic h4 { margin: 0; }
+.pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.links > summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); }
+.links .chips { margin-top: 8px; }
+a.chip { text-decoration: none; color: inherit; }

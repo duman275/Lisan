@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { STATIC } from "../lib/api";
 import { LLM_PRESETS, listModels, testLlm } from "../lib/browserLLM";
 import { InstallButton } from "./Install";
+import { VoicePicker } from "./VoicePicker";
+import { NEURAL_PREFIX, neuralFor } from "../lib/voices";
+import { langByCode } from "../data/languages";
 import { DEFAULT_PROGRESS, DEFAULT_SETTINGS, useCards, useProgress, useSettings } from "../lib/store";
 import { narrator, nativeCode, useVoices } from "../lib/tts";
 import { NATIVE_LANGUAGES } from "../data/languages";
@@ -53,6 +56,17 @@ export function SettingsView() {
 
       <div className="card">
         <h3>Sesler</h3>
+        <p className="small">
+          <b>🧠 Nöral sesler</b> telefonda çalışan, ücretsiz ve çok doğal seslerdir: ilk seçtiğinde bir kez indirilir (≈20–60 MB), sonra internetsiz çalışır ve
+          <b> ekran kapalıyken de kitabı baştan sona okumaya devam eder</b>. Türkçede 3 erkek nöral ses (Fahrettin, Fettah, DFKI) var; Türkçe kadın sesi için
+          telefonun Google sesi kullanılır.
+        </p>
+        <h4>{settings.nativeLang} (açıklamalar, özetler, Türkçe kitaplar)</h4>
+        <VoicePicker lang={nativeCode(settings.nativeLang)} />
+        <h4>{langByCode(settings.targetLang).label} (öğrendiğin dil)</h4>
+        <VoicePicker lang={settings.targetLang} />
+        <hr />
+
         <p className="muted small">
           Sesler tarayıcı ve işletim sisteminden gelir ({allVoices.length} ses bulundu). En doğal sesler: Chrome'da “Google …”, Edge'de “… Online (Natural)”, macOS/iOS'ta
           “Gelişmiş/Premium” sesler (Ayarlar → Erişilebilirlik → Sesli İçerik'ten indirilebilir).
@@ -69,7 +83,12 @@ export function SettingsView() {
           <label>
             Podcast sunucusu A
             <select value={settings.podcastVoiceA || ""} onChange={(e) => setSettings((s) => ({ ...s, podcastVoiceA: e.target.value || undefined }))}>
-              <option value="">Otomatik</option>
+              <option value="">Otomatik (A: kadın, B: erkek)</option>
+              {neuralFor(nativeCode(settings.nativeLang)).map((v) => (
+                <option key={v.id} value={NEURAL_PREFIX + v.id}>
+                  🧠 {v.gender === "f" ? "♀" : "♂"} {v.name} (nöral)
+                </option>
+              ))}
               {nativeVoices.map((v) => (
                 <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
               ))}
@@ -78,7 +97,12 @@ export function SettingsView() {
           <label>
             Podcast sunucusu B
             <select value={settings.podcastVoiceB || ""} onChange={(e) => setSettings((s) => ({ ...s, podcastVoiceB: e.target.value || undefined }))}>
-              <option value="">Otomatik</option>
+              <option value="">Otomatik (A: kadın, B: erkek)</option>
+              {neuralFor(nativeCode(settings.nativeLang)).map((v) => (
+                <option key={v.id} value={NEURAL_PREFIX + v.id}>
+                  🧠 {v.gender === "f" ? "♀" : "♂"} {v.name} (nöral)
+                </option>
+              ))}
               {nativeVoices.map((v) => (
                 <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
               ))}
