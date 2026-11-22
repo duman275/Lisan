@@ -107,6 +107,7 @@ Sesli komut ve konuşma tanıma için Chrome veya Edge önerilir (Firefox konuş
 | `LISAN_MODEL` | Model (varsayılan `claude-opus-5-5`) |
 | `AGENT_MODEL` | Asistan modeli (varsayılan `LISAN_MODEL`; daha ucuz seçenek `claude-haiku-5-5`) |
 | `OLLAMA_URL`, `OLLAMA_MODEL` | Ücretsiz yerel asistan (varsayılan `http://localhost:11434`, `qwen3:8b`) |
+| `OLLAMA_API_KEY` | Ollama Cloud anahtarı (ollama.com → Settings → Keys). Verilirse kurulum gerekmez; adres `https://ollama.com`, model `gpt-oss:120b` olur. **Not:** Ollama Cloud API kredi/abonelik ister; kredi yoksa Lisan otomatik olarak ücretsiz motora geçer. |
 
 ## Mimari
 
