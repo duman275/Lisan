@@ -27,6 +27,7 @@ Ayrı “Video” sekmesi. 2 GB'a kadar video (veya ses) telefonda saklanır (Or
 - **Çeviri:** altyazılar 13 dilden birine çevrilir; video üstünde iki satır altyazı (ör. orijinal + Türkçe) dil öğrenmek için.
 - **Dublaj:** seçilen dildeki altyazılar video oynarken kadın/erkek (nöral ya da telefon) sesleriyle seslendirilir; orijinal ses kısılır, uzun cümleler hızlandırılır.
 - **Dışa aktarma:** her dil için SRT/VTT indirme; metne dokunarak videoda o ana gitme; kaldığın yeri hatırlama.
+- **X (Twitter) bağlantıları:** `x.com/…/status/…` gönderisindeki videonun .mp4 adresi açık FixTweet/vxTwitter servisleriyle bulunur ve telefona indirilir; indirmeye izin verilmezse uygulamada uzaktan oynatılır. Dropbox ve Google Drive paylaşım bağlantıları da indirilebilir biçime çevrilir.
 - **Bağlantıdan ekleme:** YouTube bağlantıları uygulamada YouTube oynatıcısıyla açılır (indirilmez); Gemini videoyu doğrudan YouTube'dan okuyup altyazı çıkarır, çeviri/iki satır altyazı/dublaj aynen çalışır. Doğrudan video bağlantıları (.mp4, .webm…) 2 GB'a kadar telefona indirilir (site izin veriyorsa).
 
 ### 🌌 Evrenler: Buz ve Ateşin Şarkısı, Orta Dünya, Dune

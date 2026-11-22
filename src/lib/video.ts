@@ -23,7 +23,11 @@ export interface VideoMeta {
   subs: Record<string, Cue[]>; // dil adı → altyazılar ("Orijinal", "Türkçe", "English"…)
   gemini?: { name: string; uri: string; mime: string; expires: number };
   /** Bağlantıdan eklenen video: YouTube (gömülü oynatılır) ya da doğrudan dosya bağlantısı */
-  source?: { kind: "youtube"; url: string; videoId: string } | { kind: "url"; url: string };
+  source?:
+    | { kind: "youtube"; url: string; videoId: string }
+    | { kind: "url"; url: string }
+    /** İndirilemeyen ama oynatılabilen uzak video (ör. X/Twitter videosu) */
+    | { kind: "remote"; url: string; page?: string };
 }
 
 /** YouTube bağlantısından video kimliğini çıkarır (watch, youtu.be, shorts, embed, live). */
@@ -41,6 +45,79 @@ export function youtubeId(url: string): string | null {
     /* geçersiz bağlantı */
   }
   return null;
+}
+
+/** X (Twitter) gönderi bağlantısından gönderi kimliğini çıkarır. */
+export function xStatusId(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    const host = u.hostname.replace(/^(www|mobile|m)\./, "");
+    if (!/^(x\.com|twitter\.com|fxtwitter\.com|vxtwitter\.com|fixupx\.com|fixvx\.com|twittpr\.com)$/.test(host)) return null;
+    return /\/status(?:es)?\/(\d+)/.exec(u.pathname)?.[1] || null;
+  } catch {
+    return null;
+  }
+}
+
+export interface XVideo {
+  url: string;
+  text: string;
+  author: string;
+}
+
+/** X gönderisindeki videonun .mp4 adresini bulur (açık FixTweet / vxTwitter servisleri üzerinden). */
+export async function resolveXVideo(id: string): Promise<XVideo> {
+  const errs: string[] = [];
+  // 1) FixTweet
+  try {
+    const r = await fetch(`https://api.fxtwitter.com/status/${id}`);
+    if (r.ok) {
+      const d = (await r.json()) as {
+        tweet?: { text?: string; author?: { screen_name?: string }; media?: { videos?: { url: string; width?: number }[] } };
+      };
+      const vids = d.tweet?.media?.videos || [];
+      if (vids.length) return { url: vids[0].url, text: d.tweet?.text || "", author: d.tweet?.author?.screen_name || "" };
+      errs.push("gönderide video yok");
+    } else errs.push(`FixTweet ${r.status}`);
+  } catch {
+    errs.push("FixTweet erişilemedi");
+  }
+  // 2) vxTwitter
+  try {
+    const r = await fetch(`https://api.vxtwitter.com/Twitter/status/${id}`);
+    if (r.ok) {
+      const d = (await r.json()) as { text?: string; user_screen_name?: string; media_extended?: { type: string; url: string }[]; mediaURLs?: string[] };
+      const v = (d.media_extended || []).find((m) => m.type === "video" || m.type === "gif") || (d.mediaURLs || []).map((u) => ({ url: u })).find((m) => /\.mp4/.test(m.url));
+      if (v) return { url: v.url, text: d.text || "", author: d.user_screen_name || "" };
+      errs.push("gönderide video yok");
+    } else errs.push(`vxTwitter ${r.status}`);
+  } catch {
+    errs.push("vxTwitter erişilemedi");
+  }
+  throw new Error(
+    errs.includes("gönderide video yok")
+      ? "Bu X gönderisinde video bulunamadı (yalnızca fotoğraf ya da metin olabilir)."
+      : `X videosunun adresi alınamadı (${errs.join(", ")}). Gönderi gizli/korumalı ya da silinmiş olabilir.`,
+  );
+}
+
+/** Paylaşım bağlantılarını doğrudan indirilebilir biçime çevirir (Dropbox, Google Drive). */
+export function normalizeVideoUrl(url: string): string {
+  try {
+    const u = new URL(url.trim());
+    if (/(^|\.)dropbox\.com$/.test(u.hostname)) {
+      u.searchParams.delete("dl");
+      u.searchParams.set("raw", "1");
+      return u.toString();
+    }
+    if (u.hostname === "drive.google.com") {
+      const id = /\/file\/d\/([\w-]+)/.exec(u.pathname)?.[1] || u.searchParams.get("id");
+      if (id) return `https://drive.google.com/uc?export=download&id=${id}`;
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 /** Doğrudan video bağlantısını akış hâlinde telefona indirir (site izin veriyorsa). */

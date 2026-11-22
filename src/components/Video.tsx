@@ -18,6 +18,9 @@ import {
   translateCues,
   uploadToGemini,
   downloadVideoUrl,
+  normalizeVideoUrl,
+  resolveXVideo,
+  xStatusId,
   youtubeId,
   type Cue,
   type VideoMeta,
@@ -154,6 +157,17 @@ export function VideoTab() {
   return <VideoList videos={videos} update={update} onOpen={setOpenId} />;
 }
 
+function probeDuration(src: string): Promise<number> {
+  return new Promise<number>((res) => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => res(Number.isFinite(v.duration) ? v.duration : 0);
+    v.onerror = () => res(0);
+    setTimeout(() => res(0), 15000);
+    v.src = src;
+  });
+}
+
 function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: ReturnType<typeof useVideos>[1]; onOpen: (id: string) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState("");
@@ -183,9 +197,35 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
     }
     const ctrl = new AbortController();
     dl.current = ctrl;
+    let fileUrl = normalizeVideoUrl(url);
+    let title = "";
     try {
+      // X (Twitter) gönderisi: videonun gerçek .mp4 adresini bul
+      const xid = xStatusId(url);
+      if (xid) {
+        setStatus("X gönderisindeki video bulunuyor…");
+        const xv = await resolveXVideo(xid);
+        fileUrl = xv.url;
+        title = `X${xv.author ? ` @${xv.author}` : ""}: ${xv.text.replace(/https?:\/\/\S+/g, "").trim().slice(0, 80) || xid}`;
+        try {
+          setStatus("X videosu indiriliyor…");
+          const f = await downloadVideoUrl(id, fileUrl, setStatus, ctrl.signal);
+          const file = await loadVideoFile(id);
+          const duration = file ? await probeDuration(URL.createObjectURL(file)) : 0;
+          await update((l) => [{ id, name: title, size: f.size, type: f.type, duration, added: Date.now(), subs: {}, source: { kind: "url", url } }, ...l]);
+        } catch (e) {
+          if ((e as Error).name === "AbortError") throw e;
+          // İndirmeye izin verilmezse uzaktan oynat
+          const duration = await probeDuration(fileUrl);
+          await update((l) => [{ id, name: title, size: 0, type: "video/mp4", duration, added: Date.now(), subs: {}, source: { kind: "remote", url: fileUrl, page: url } }, ...l]);
+        }
+        setStatus("");
+        setLink("");
+        onOpen(id);
+        return;
+      }
       setStatus("Bağlantıya bağlanılıyor…");
-      const f = await downloadVideoUrl(id, url, setStatus, ctrl.signal);
+      const f = await downloadVideoUrl(id, fileUrl, setStatus, ctrl.signal);
       const file = await loadVideoFile(id);
       const duration = file
         ? await new Promise<number>((res) => {
@@ -258,13 +298,13 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
         </div>
         <h3 className="mt">🔗 Bağlantıdan ekle</h3>
         <form className="row wrap" onSubmit={(e) => (e.preventDefault(), void addLink())}>
-          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="YouTube ya da doğrudan video bağlantısı (.mp4, .webm…)" inputMode="url" />
+          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="X, YouTube ya da video bağlantısı (.mp4, Dropbox, Drive…)" inputMode="url" />
           <button className="btn primary" disabled={!link.trim() || Boolean(status)}>
             Ekle
           </button>
         </form>
         <p className="muted small">
-          <b>YouTube:</b> video uygulamada YouTube oynatıcısıyla açılır (indirilmez); altyazı, çeviri, iki satır altyazı ve dublaj yine çalışır — Gemini videoyu doğrudan
+          <b>X (Twitter):</b> gönderi bağlantısını yapıştır; gönderideki video bulunup telefona indirilir (izin verilmezse uygulamada oynatılır). <b>YouTube:</b> video uygulamada YouTube oynatıcısıyla açılır (indirilmez); altyazı, çeviri, iki satır altyazı ve dublaj yine çalışır — Gemini videoyu doğrudan
           YouTube'dan okur (herkese açık videolar). <b>Doğrudan video bağlantısı:</b> 2 GB'a kadar telefona indirilir (site izin veriyorsa).
         </p>
         {status && (
@@ -286,7 +326,7 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
           {videos.map((v) => (
             <div key={v.id} className="lib-item">
               <button className="lib-open" onClick={() => onOpen(v.id)}>
-                <span className="pill">{v.source?.kind === "youtube" ? "▶ YouTube" : v.source?.kind === "url" ? "🔗" : "🎬"}</span>
+                <span className="pill">{v.source?.kind === "youtube" ? "▶ YouTube" : v.source?.kind === "remote" ? "𝕏 uzaktan" : v.source?.kind === "url" ? (xStatusId(v.source.url) ? "𝕏" : "🔗") : "🎬"}</span>
                 <strong>{v.name}</strong>
                 <span className="muted small">
                   {v.size ? `${fmtSize(v.size)} · ` : ""}
@@ -377,6 +417,8 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
           });
         })
         .catch((e) => setErr((e as Error).message));
+    } else if (meta.source?.kind === "remote") {
+      setSrc(meta.source.url);
     } else {
       void loadVideoFile(meta.id).then((f) => {
         if (!f) return setMissing(true);
@@ -432,7 +474,13 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
     abort.current = ctrl;
     try {
       let g: { uri: string; mime: string } | undefined =
-        meta.source?.kind === "youtube" ? { uri: meta.source.url, mime: "" } : meta.gemini && meta.gemini.expires > Date.now() ? meta.gemini : undefined;
+        meta.source?.kind === "youtube"
+          ? { uri: meta.source.url, mime: "" }
+          : meta.source?.kind === "remote"
+            ? { uri: meta.source.url, mime: "video/mp4" }
+            : meta.gemini && meta.gemini.expires > Date.now()
+              ? meta.gemini
+              : undefined;
       if (!g) {
         const f = await loadVideoFile(meta.id);
         if (!f) throw new Error("Video dosyası bulunamadı.");
@@ -450,7 +498,13 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       setBusy("");
     } catch (e) {
       setBusy("");
-      if ((e as Error).name !== "AbortError") setErr((e as Error).message);
+      if ((e as Error).name !== "AbortError")
+        setErr(
+          (e as Error).message +
+            (meta.source?.kind === "remote"
+              ? " — Bu video uzaktan oynatıldığı için Gemini'ye gönderilemiyor olabilir. Videoyu telefona kaydedip “Video seç” ile eklersen altyazı kesin çalışır."
+              : ""),
+        );
     }
   }
 
