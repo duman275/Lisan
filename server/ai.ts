@@ -3,7 +3,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { Response } from "express";
 import { z } from "zod";
 import * as P from "./prompts.ts";
-import { communityLinks, findBookPages, freeAvailable, freeDeck, freeDefine, freeLesson, freePlacement, wikiText } from "./free.ts";
+import { communityLinks, findBookPages, freeAvailable, freeJsonTask, NEEDS_LLM, wikiText } from "./free.ts";
 import { checkOllama, ollamaJson, ollamaStream, type OllamaMessage } from "./ollama.ts";
 
 export const MODEL = process.env.LISAN_MODEL || "claude-opus-5-5";
@@ -34,11 +34,6 @@ export async function resolveEngine(pref?: string): Promise<Engine> {
   return "free";
 }
 
-export const NEEDS_LLM =
-  "Bu özellik bir dil modeli gerektirir. Ücretsiz seçenek: bilgisayarına Ollama kur (ollama.com) ve “ollama pull qwen3:8b” çalıştır; Lisan onu otomatik bulur. Alternatif: sunucuya Claude API anahtarı ekle.";
-
-const isEnglish = (l?: string) => !l || /^english/i.test(l);
-const isTurkish = (l?: string) => !l || /^türkçe|^turkish/i.test(l);
 
 // ---------- Akış (SSE) görevleri ----------
 
@@ -337,25 +332,7 @@ export interface JsonRequest {
 
 function freeJson(req: JsonRequest): unknown {
   if (!freeAvailable()) throw new Error(`Ücretsiz veri dosyaları bulunamadı (data/). ${NEEDS_LLM}`);
-  const enTr = isEnglish(req.targetLang) && isTurkish(req.nativeLang);
-  const onlyEn = "Ücretsiz (yapay zekâsız) içerik şimdilik İngilizce ↔ Türkçe içindir. Diğer diller için ücretsiz Ollama kurabilirsiniz (Ayarlar → Asistan ve yapay zekâ).";
-  switch (req.task) {
-    case "lesson":
-      if (!enTr) throw new Error(onlyEn);
-      if (!req.unitKey) throw new Error("Ünite bilgisi eksik.");
-      return freeLesson(req.unitKey, req.level || "A1", req.topic || "");
-    case "deck":
-      if (!enTr) throw new Error(onlyEn);
-      return freeDeck(req.level || "A1", Math.min(req.count || 20, 40), req.exclude || [], req.topic);
-    case "define":
-      if (!isTurkish(req.nativeLang) || (req.targetLang && !isEnglish(req.targetLang))) throw new Error(onlyEn);
-      return freeDefine(req.word || "");
-    case "placement":
-      if (!enTr) throw new Error(onlyEn);
-      return freePlacement();
-    default:
-      throw new Error(NEEDS_LLM);
-  }
+  return freeJsonTask(req);
 }
 
 export async function jsonTask(req: JsonRequest): Promise<unknown> {

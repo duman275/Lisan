@@ -2,6 +2,14 @@
 
 Lisan; çok dilli bir dil öğrenme sistemi, sesli kitap/podcast okuyucu, PDF anlatıcı ve web destekli edebi analiz aracını tek uygulamada birleştirir. Arayüz Türkçedir, yapay zekâ özellikleri Claude API ile çalışır.
 
+## 📱 Telefondan kullan
+
+**https://duman275.github.io/Lisan/** — tarayıcıda aç, menüden **“Ana ekrana ekle”** de; uygulama gibi açılır.
+
+Telefondaki sürüm sunucusuzdur ve tamamen ücretsizdir: İngilizce dersler (112 ünite), kelime kartları, seviye testi, sözlük, Efsaneler'deki 📗 telifsiz kitapları okuma/dinleme, PDF yükleme, Wikipedia özet/analiz ve sesli komutlar çalışır. Öğretmenle sohbet, hikâye yazma ve podcast gibi dil modeli isteyen özellikler bilgisayarda (Ollama/Claude ile) çalışan sürümdedir.
+
+Site, `main` dalına her gönderimde GitHub Actions ile otomatik derlenir (`.github/workflows/pages.yml`).
+
 ## Ücretsiz kullanım — API anahtarı gerekmez
 
 Lisan üç kademeli çalışır ve hangisinin kullanılacağını Ayarlar → **Yapay zekâ kaynağı**'ndan seçersin:

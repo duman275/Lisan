@@ -11,10 +11,15 @@ export interface StreamResult {
 
 /** Sunucudaki /api/stream uç noktasından SSE akışını okur. */
 import { getSettings } from "./store";
+import { staticGet, staticJson, staticStream } from "./staticApi";
+
+/** Sunucusuz derleme (GitHub Pages / telefon): VITE_STATIC=1 */
+export const STATIC = import.meta.env.VITE_STATIC === "1";
 
 const withProvider = (body: Record<string, unknown>) => ({ provider: getSettings().agentProvider, ...body });
 
 export async function streamAI(body: Record<string, unknown>, h: StreamHandlers = {}, signal?: AbortSignal): Promise<StreamResult> {
+  if (STATIC) return staticStream(body, h);
   const res = await fetch("/api/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -54,6 +59,7 @@ export async function streamAI(body: Record<string, unknown>, h: StreamHandlers 
 }
 
 export async function jsonAI<T>(body: Record<string, unknown>): Promise<T> {
+  if (STATIC) return (await staticJson(body)) as T;
   const res = await fetch("/api/json", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -65,6 +71,7 @@ export async function jsonAI<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 export async function getJSON<T>(url: string): Promise<T> {
+  if (STATIC) return (await staticGet(url)) as T;
   const res = await fetch(url);
   const data = await res.json().catch(() => ({ error: `Sunucu hatası (${res.status})` }));
   if (!res.ok) throw new Error(data.error || `Sunucu hatası (${res.status})`);
