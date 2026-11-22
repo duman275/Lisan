@@ -378,7 +378,7 @@ export function Courses({ lang, initial }: { lang: string; initial?: { course: s
         level={course.lessonLevel}
         topic={course.units[open]}
         heading={`${course.icon} ${course.name} · Ders ${open + 1}`}
-        courseFocus={course.focus}
+        courseFocus={!lang.startsWith("en") && course.focusOther ? course.focusOther : course.focus}
         doneKey={`${lang}|course:${course.id}|${open}`}
         unitKey={`course:${course.id}:${open}`}
         cacheKey={`course|${lang}|${course.id}|${open}`}

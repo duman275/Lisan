@@ -29,7 +29,7 @@ export const NATIVE_LANGUAGES = [
   { code: "de-DE", name: "Deutsch" },
 ];
 
-export const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+export const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2", "Native"] as const;
 export type Level = (typeof LEVELS)[number];
 
 export const LEVEL_INFO: Record<Level, { name: string; can: string; words: string }> = {
@@ -39,6 +39,11 @@ export const LEVEL_INFO: Record<Level, { name: string; can: string; words: strin
   B2: { name: "Orta üstü", can: "Ana dili konuşanlarla akıcı konuşur, haber ve romanların çoğunu anlar.", words: "≈4.000 kelime" },
   C1: { name: "İleri", can: "Akademik/iş ortamında esnek ve etkili kullanır, ince anlamları yakalar.", words: "≈8.000 kelime" },
   C2: { name: "Ustalık", can: "Neredeyse ana dil düzeyi: edebiyat, mizah, ima ve üslup farkları.", words: "≈16.000+ kelime" },
+  Native: {
+    name: "Ana dil (Native)",
+    can: "Ana dili konuşan biri gibi: argo, deyim, aksan, mizah, ima ve hızlı konuşmayı anlar; ortama göre tonunu değiştirir.",
+    words: "≈25.000+ kelime ve sayısız kalıp",
+  },
 };
 
 export function langByCode(code: string): Language {

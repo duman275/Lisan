@@ -10,6 +10,7 @@ export interface Course {
   lessonLevel: string; // ders üretiminde kullanılacak CEFR
   desc: string;
   focus: string; // modele giden odak açıklaması
+  focusOther?: string; // İngilizce dışındaki diller için odak
   units: string[];
 }
 
@@ -72,9 +73,11 @@ export const COURSES: Course[] = [
     icon: "🗽",
     name: "Native gibi konuş",
     nameEn: "Native English",
-    level: "B2 → C2",
-    lessonLevel: "B2",
-    desc: "Ana dili İngilizce olanların gerçekten kullandığı dil: phrasal verb'ler, deyimler, argo, kısaltmalar (gonna, wanna), dizi ve film dili, Amerikan ve İngiliz farkları, ironi ve mizah.",
+    level: "B2 → Native",
+    lessonLevel: "Native",
+    focusOther:
+      "Native-speaker speech in the target language as actually spoken today: idioms, colloquial contractions and sound reductions, current informal slang (marked as informal; avoid offensive words), regional varieties and accents, discourse markers, humor and irony, and how natives really respond in everyday situations. Dialogue should feel like a scene from a modern TV series in that country. In the explanation, show 'textbook' vs 'how natives say it' side by side.",
+    desc: "Ana dili konuşanların gerçekten kullandığı dil: deyimler, argo, konuşmadaki kısaltmalar, dizi ve film dili, aksan farkları, ironi ve mizah. İngilizcede: gonna/wanna, phrasal verb'ler, Amerikan–İngiliz farkları.",
     focus:
       "Native-speaker English as actually spoken in the US and UK today: phrasal verbs, idioms, current informal slang (marked as informal/slang, avoid offensive words), reductions and connected speech (gonna, wanna, gotta, kinda, y'know), discourse markers, hedging, sarcasm and understatement, and the differences between American and British usage. Dialogue should feel like a scene from a modern TV series. In the explanation, show 'textbook' vs 'how natives say it' side by side.",
     units: [

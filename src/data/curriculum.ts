@@ -74,6 +74,18 @@ export const CURRICULUM: Record<Level, string[]> = {
     "Doğaçlama konuşma ve münazara",
     "Yaratıcı yazarlık",
   ],
+  Native: [
+    "Konuşma dilinde kısaltmalar ve ses düşmeleri",
+    "Argo, gençlik dili ve internet dili",
+    "Günlük deyimler ve atasözleri",
+    "Bölgesel aksanlar ve ağızlar",
+    "Mizah, ironi ve kelime oyunları",
+    "Hızlı konuşmayı anlama: dizi, podcast, sokak röportajı",
+    "Kültürel göndermeler: şarkılar, filmler, ünlü sözler",
+    "İma, nezaket ve dolaylı anlatım",
+    "Ton değiştirme: aynı şeyi beş farklı tonda söylemek",
+    "Mesajlaşma ve sosyal medya dili",
+  ],
 };
 
 export const METHOD = [

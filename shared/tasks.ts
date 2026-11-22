@@ -24,6 +24,13 @@ export interface StreamRequest {
 
 const LIMIT = 180_000; // tek istekte gönderilecek azami karakter (≈45K token)
 
+/** "Native" seviyesi modele C2'nin ötesi olarak açıklanır. */
+export function levelDesc(level?: string): string {
+  if (level === "Native")
+    return "Native (beyond C2: native-speaker level — colloquial speech, slang, idioms, regional accents, humor, fast natural speech, cultural references)";
+  return level || "A1";
+}
+
 export function clip(s: string | undefined, max = LIMIT): string {
   if (!s) return "";
   return s.length > max ? s.slice(0, max) : s;
@@ -41,7 +48,7 @@ export function buildStreamPrompt(req: StreamRequest): {
     case "tutor": {
       const history = (req.messages || []).slice(-30);
       if (!history.length || history[0].role !== "user") throw new Error("Sohbet geçmişi kullanıcı mesajıyla başlamalı");
-      const ctx = `[Learner profile] Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${req.level}. Mode: ${req.mode || "free conversation"}${req.topic ? `. Topic: ${req.topic}` : ""}.`;
+      const ctx = `[Learner profile] Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${levelDesc(req.level)}. Mode: ${req.mode || "free conversation"}${req.topic ? `. Topic: ${req.topic}` : ""}.`;
       return {
         system: P.TUTOR_SYSTEM,
         messages: history.map((m, i) =>
@@ -56,7 +63,7 @@ export function buildStreamPrompt(req: StreamRequest): {
         messages: [
           {
             role: "user",
-            content: `Write a graded story in ${req.targetLang} at CEFR level ${req.level}. Length: ${req.mode || "medium (~400 words)"}. Topic/genre: ${req.topic || "surprise me"}.`,
+            content: `Write a graded story in ${req.targetLang} at CEFR level ${levelDesc(req.level)}. Length: ${req.mode || "medium (~400 words)"}. Topic/genre: ${req.topic || "surprise me"}.`,
           },
         ],
         effort: "low",
@@ -187,7 +194,7 @@ export function buildJsonPrompt(req: JsonRequest): { system: string; content: st
   switch (req.task) {
     case "lesson":
       system = P.LESSON_SYSTEM;
-      content = `Create a lesson. Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${req.level}. Unit: ${req.topic}.${
+      content = `Create a lesson. Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${levelDesc(req.level)}. Unit: ${req.topic}.${
         req.courseFocus ? ` Course focus: ${clip(req.courseFocus, 1000)}` : ""
       } Include 10-14 vocabulary items, a 8-12 line dialogue, 8 exercises (mix of kinds) and 5 shadowing sentences.`;
       schema = Lesson;
@@ -195,7 +202,7 @@ export function buildJsonPrompt(req: JsonRequest): { system: string; content: st
       break;
     case "deck":
       system = P.DECK_SYSTEM;
-      content = `Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${req.level}. ${req.topic ? `Theme: ${req.topic}. ` : ""}Give the next ${Math.min(req.count || 20, 40)} most useful words/chunks for this level.${
+      content = `Target language: ${req.targetLang}. Native language: ${native}. CEFR level: ${levelDesc(req.level)}. ${req.topic ? `Theme: ${req.topic}. ` : ""}Give the next ${Math.min(req.count || 20, 40)} most useful words/chunks for this level.${
         req.exclude?.length ? ` The learner already knows these, do not repeat them: ${req.exclude.slice(-400).join(", ")}` : ""
       }`;
       schema = Deck;

@@ -55,8 +55,8 @@ export function freeReady() {
 }
 
 // Seviyeye göre izin verilen en nadir kelime sırası
-const CAP: Record<string, number> = { A1: 800, A2: 1500, B1: 3000, B2: 6000, C1: 12000, C2: 40000 };
-const FLOOR: Record<string, number> = { A1: 0, A2: 500, B1: 1200, B2: 2500, C1: 5000, C2: 10000 };
+const CAP: Record<string, number> = { A1: 800, A2: 1500, B1: 3000, B2: 6000, C1: 12000, C2: 40000, Native: 40000 };
+const FLOOR: Record<string, number> = { A1: 0, A2: 500, B1: 1200, B2: 2500, C1: 5000, C2: 10000, Native: 10000 };
 const STOP = new Set(
   "the a an and or but to of in on at for with is are was were be been i you he she it we they me him her us them my your his its our their this that these those do does did not no yes so if as by from up out about what who how when where why which there here can will would could should just".split(
     " ",
@@ -111,8 +111,12 @@ function glossOf(word: string): string | undefined {
 
 // ---------- Ders ----------
 
+// Native seviyesi üniteleri, ana dil gibi konuşma kursunun içeriklerini kullanır
+const NATIVE_MAP = ["course:native:0", "course:native:3", "course:native:2", "course:native:5", "course:native:13", "course:native:8", "course:native:14", "course:native:7", "C1:7", "course:native:9"];
+
 export function freeLesson(unitKey: string, level: string, topic: string) {
-  const unit = FREE_UNITS[unitKey];
+  const nm = /^Native:(\d+)$/.exec(unitKey);
+  const unit = FREE_UNITS[nm ? NATIVE_MAP[Number(nm[1])] : unitKey];
   if (!unit) throw new Error("Bu ünite için ücretsiz içerik bulunamadı.");
   const seed = { s: hash(unitKey) };
   const lv = level in CAP ? level : "B1";
