@@ -536,7 +536,15 @@ async function transcribeChunks(
     lang ||= data.lang || "";
     const lastEnd = all.length ? all[all.length - 1].e : -1;
     for (const raw of (data.cues || []) as (Cue & { text?: string; f?: string; start?: unknown; end?: unknown })[]) {
-      const c = { s: toSec(raw.start ?? raw.s) + off, e: toSec(raw.end ?? raw.e) + off, t: String(raw.t ?? raw.text ?? raw.f ?? "") };
+      let rs = toSec(raw.start ?? raw.s);
+      let re = toSec(raw.end ?? raw.e);
+      // Model parça yerine videonun başından saydıysa (zaman parça süresini aşıyor ama parçanın içine düşüyor) düzelt
+      const clipLen = (total ? Math.min(b, total) : b) - a;
+      let o = off;
+      if (rel && rs > clipLen + 2 && rs >= a - 1 && rs <= b + 1) o = 0;
+      if (!Number.isFinite(re)) re = rs;
+      const c = { s: rs + o, e: re + o, t: String(raw.t ?? raw.text ?? raw.f ?? "") };
+      rs = c.s;
       if (!c.t.trim() || !Number.isFinite(c.s) || !Number.isFinite(c.e)) continue;
       if (c.s < a - 1 || c.s >= b + 1 || c.s < lastEnd - 0.5 || (total && c.s > total + 1)) continue; // parça dışı ya da tekrar
       all.push({ s: c.s, e: c.e > c.s ? Math.min(c.e, c.s + 15) : c.s + Math.max(1.5, c.t.length / 15), t: c.t.trim() });

@@ -51,7 +51,7 @@ function useVideos(): [VideoMeta[], (fn: (v: VideoMeta[]) => VideoMeta[]) => Pro
 
 const label = (key: string, meta?: VideoMeta): string =>
   meta?.partial?.[key] !== undefined
-    ? `${label(key)} (yarım${key === "orig" ? "" : " — devam etmek için seç"})`
+    ? `${label(key, { ...meta, partial: undefined })} (yarım${key === "orig" ? "" : " — devam etmek için seç"})`
     : key === "orig" ? `Orijinal${meta?.spokenLang ? ` (${langByCode(toBcp47(meta.spokenLang)).label})` : ""}` : `${langByCode(key).flag} ${langByCode(key).label}`;
 
 // ---------- Oynatıcı soyutlaması: telefondaki video ya da YouTube ----------
@@ -203,6 +203,7 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
   const [status, setStatus] = useState("");
   const [err, setErr] = useState("");
   const [link, setLink] = useState("");
+  const [space, setSpace] = useState("");
   const dl = useRef<AbortController | null>(null);
 
   async function addLink() {
@@ -210,6 +211,10 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
     // Paylaşım metninin içindeki bağlantıyı al (“Şuna bak https://x.com/…” gibi)
     const url = (/https?:\/\/\S+/i.exec(link.trim())?.[0] || link.trim()).replace(/[)\]}>.,;]+$/, "");
     if (!/^https?:\/\//i.test(url)) return setErr("Geçerli bir bağlantı yapıştır (https://…).");
+    if (/^https?:\/\/(www\.|mobile\.)?(x|twitter)\.com\/i\/spaces\//i.test(url)) {
+      setSpace(url);
+      return;
+    }
     if (/^https?:\/\/t\.co\//i.test(url))
       return setErr("Bu kısaltılmış bir t.co bağlantısı. X'te gönderiyi aç → Paylaş → “Bağlantıyı kopyala” ile x.com/…/status/… bağlantısını yapıştır.");
     const id = uid();
@@ -288,8 +293,8 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
     if (file.size > MAX_VIDEO) return setErr(`Video ${fmtSize(file.size)} — en fazla 2 GB yüklenebilir.`);
     const id = uid();
     try {
-      setStatus("Video telefona kaydediliyor… %0");
-      await saveVideoFile(id, file, (p) => setStatus(`Video telefona kaydediliyor… %${p}`));
+      setStatus("Telefona kaydediliyor… %0");
+      await saveVideoFile(id, file, (p) => setStatus(`Telefona kaydediliyor… %${p}`));
       const duration = await new Promise<number>((res) => {
         const v = document.createElement("video");
         v.preload = "metadata";
@@ -297,7 +302,10 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
         v.onerror = () => res(0);
         v.src = URL.createObjectURL(file);
       });
-      const meta: VideoMeta = { id, name: file.name, size: file.size, type: file.type || "video/mp4", duration, added: Date.now(), subs: {} };
+      // Bazı telefonlar ses dosyasının türünü bildirmez: uzantıdan anla
+      const ext = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba)$/i.exec(file.name)?.[1]?.toLowerCase();
+      const type = file.type || (ext ? `audio/${ext === "m4a" ? "mp4" : ext === "mp3" ? "mpeg" : ext}` : "video/mp4");
+      const meta: VideoMeta = { id, name: file.name, size: file.size, type, duration, added: Date.now(), subs: {} };
       await update((l) => [meta, ...l]);
       setStatus("");
       onOpen(id);
@@ -329,9 +337,9 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
           <input ref={ref} type="file" accept="video/*,audio/*" hidden onChange={(e) => e.target.files?.[0] && add(e.target.files[0])} />
           <div className="big-icon">🎬</div>
           <p>
-            <b>Video seç (en fazla 2 GB)</b>
+            <b>Video ya da ses seç (en fazla 2 GB)</b>
           </p>
-          <p className="muted small">MP4, WebM, MOV… Ses dosyası (MP3, M4A) da olur.</p>
+          <p className="muted small">MP4, WebM, MOV… Ses kayıtları da olur: MP3, M4A, WAV, OGG (podcast, X Spaces kaydı…).</p>
         </div>
         <h3 className="mt">🔗 Bağlantıdan ekle</h3>
         <form className="row wrap" onSubmit={(e) => (e.preventDefault(), void addLink())}>
@@ -341,9 +349,45 @@ function VideoList({ videos, update, onOpen }: { videos: VideoMeta[]; update: Re
           </button>
         </form>
         <p className="muted small">
-          <b>X (Twitter):</b> gönderi bağlantısını yapıştır; gönderideki video bulunup telefona indirilir (izin verilmezse uygulamada oynatılır). <b>YouTube:</b> video uygulamada YouTube oynatıcısıyla açılır (indirilmez); altyazı, çeviri, iki satır altyazı ve dublaj yine çalışır — Gemini videoyu doğrudan
+          <b>X (Twitter):</b> gönderi bağlantısını yapıştır (Spaces kaydı için bağlantıyı yapıştırınca adımlar gösterilir); gönderideki video bulunup telefona indirilir (izin verilmezse uygulamada oynatılır). <b>YouTube:</b> video uygulamada YouTube oynatıcısıyla açılır (indirilmez); altyazı, çeviri, iki satır altyazı ve dublaj yine çalışır — Gemini videoyu doğrudan
           YouTube'dan okur (herkese açık videolar). <b>Doğrudan video bağlantısı:</b> 2 GB'a kadar telefona indirilir (site izin veriyorsa).
         </p>
+        {space && (
+          <div className="card space-help">
+            <h4>🎙 X Spaces kaydı</h4>
+            <p className="small">
+              X, Spaces seslerini yalnızca kendi uygulamasına veriyor; başka uygulamalar (Lisan dahil) kaydı bağlantıdan doğrudan çekemiyor. Kaydı bir kez ses dosyası
+              olarak indirmen yeterli — gerisini Lisan yapar: konuşmaları altyazıya döker, istediğin dile çevirir ve <b>dublajlı dinletir</b> (saatlerce süren kayıtlar da olur).
+            </p>
+            <ol className="small">
+              <li>
+                <b>Kayıt senin Space'inse:</b> X → Ayarlar → Hesabın → <i>Verilerinin arşivini indir</i>; Space kayıtların arşivde ses dosyası olarak bulunur.
+              </li>
+              <li>
+                <b>Başkasının kaydıysa:</b> tarayıcıda “Twitter Spaces downloader” ara; bağlantıyı yapıştırıp kaydı <b>.m4a / .mp3</b> olarak indir (kayıt X'te tekrar
+                dinlenebilir durumda olmalı).
+              </li>
+              <li>
+                İnen dosyayı yukarıdaki <b>“Video ya da ses seç”</b> ile ekle → <b>🎙 Konuşmalardan altyazı çıkar</b> → dil seç → <b>Dublajı aç</b>.
+              </li>
+            </ol>
+            <p className="muted small">Ses ayrıca 10 dakikalık parçalarla işlenir; yarıda kalırsa kaldığı yerden devam eder. Başkalarının kayıtlarını yalnızca kişisel kullanım için indir.</p>
+            <div className="row wrap">
+              <a className="btn small" href={space} target="_blank" rel="noreferrer noopener">
+                X'te aç
+              </a>
+              <a className="btn small" href={`https://www.google.com/search?q=${encodeURIComponent("Twitter Spaces downloader")}`} target="_blank" rel="noreferrer noopener">
+                🔎 İndirici ara
+              </a>
+              <button className="btn small primary" onClick={() => ref.current?.click()}>
+                📂 İndirdiğim dosyayı ekle
+              </button>
+              <button className="btn ghost small" onClick={() => setSpace("")}>
+                Kapat
+              </button>
+            </div>
+          </div>
+        )}
         {status && (
           <div className="status">
             <span className="spinner" /> {status}
@@ -581,7 +625,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
       const f = await loadVideoFile(meta.id);
       if (!f) throw new Error("Video dosyası bulunamadı.");
       // 2) Küçük ve kısa dosyalar: dosyanın kendisi gönderilir
-      if (f.size <= INLINE_MAX && duration && duration <= 20 * 60) {
+      if (f.size <= INLINE_MAX && duration && duration <= 20 * 60 && !(f.type || meta.type).startsWith("audio")) {
         setBusy("Video hazırlanıyor…");
         const dataUrl = await fileToDataUrl(new Blob([f], { type: f.type || "video/mp4" }));
         return await done(await transcribeCompat(dataUrl, duration, setBusy, ctrl.signal, pr));
@@ -678,7 +722,7 @@ function Player({ meta, update, onBack }: { meta: VideoMeta; update: ReturnType<
         ) : missing ? (
           <p className="error">Video dosyası bu cihazda bulunamadı (tarayıcı verileri silinmiş olabilir). Altyazılar duruyor; videoyu yeniden yükleyebilirsin.</p>
         ) : (
-          <div className="video-wrap">
+          <div className={`video-wrap${meta.type.startsWith("audio") ? " audio" : ""}`}>
             <video ref={videoRef} src={src || undefined} controls playsInline onError={onVideoError} />
             <div className="subs-overlay" aria-live="polite">
               {i2 >= 0 && <div className="sub sub2">{c2![i2].t}</div>}

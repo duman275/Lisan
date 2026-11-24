@@ -391,3 +391,9 @@ a.chip { text-decoration: none; color: inherit; }
 h3.mt { margin-top: 16px; }
 .dub-status { color: var(--accent); }
 .sticky-status { position: sticky; top: 64px; z-index: 15; box-shadow: 0 6px 20px rgb(0 0 0 / 0.35); }
+
+.video-wrap.audio { min-height: 240px; background: radial-gradient(circle at 50% 35%, #1c2a44, #05070b 70%); }
+.video-wrap.audio::before { content: "🎙"; position: absolute; top: 28px; left: 0; right: 0; text-align: center; font-size: 56px; opacity: 0.85; pointer-events: none; }
+.video-wrap.audio video { min-height: 240px; background: transparent; }
+.video-wrap.audio .subs-overlay { bottom: 64px; }
+.space-help ol { padding-left: 20px; display: grid; gap: 6px; }
